@@ -115,7 +115,7 @@ func TestPostgresQualifiedStoreSharesPoolAndIsolatesSchemas(t *testing.T) {
 	}
 	workers.Wait()
 	// Hold multiple connections simultaneously to inspect each pooled session.
-	var conns []*sql.Conn
+	conns := make([]*sql.Conn, 0, 4)
 	defer func() {
 		for _, conn := range conns {
 			_ = conn.Close()

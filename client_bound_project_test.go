@@ -1,4 +1,4 @@
-//nolint:goconst,lll // Exact signed-claim and durable-binding negatives stay beside their assertions.
+//nolint:goconst // Exact signed-claim and durable-binding negatives stay beside their assertions.
 package browser
 
 import (

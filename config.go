@@ -116,7 +116,7 @@ func validDNSHost(host string) bool {
 	return true
 }
 
-func (c config) validate() error {
+func (c config) validateIngress() error {
 	if c.HTTPSReverseProxy && (c.Ingress != nil || c.Transport != "" || c.ProxyCIDRs != "" ||
 		c.CertFile != "" || c.TLSKeyFile != "") {
 		return errors.New("HTTPS reverse proxy cannot be combined with other ingress settings")
@@ -125,6 +125,13 @@ func (c config) validate() error {
 		((c.Transport == "" || c.Transport == "tls") && c.ProxyCIDRs != "") ||
 		(c.Transport == privateHTTPTransport && (c.ProxyCIDRs == "" || c.CertFile != "" || c.TLSKeyFile != "")) {
 		return errors.New("invalid application ingress transport")
+	}
+	return nil
+}
+
+func (c config) validate() error {
+	if err := c.validateIngress(); err != nil {
+		return err
 	}
 	if c.Freshness < 0 || c.Freshness > 5*time.Minute {
 		return errors.New("freshness must be positive and at most five minutes")
