@@ -49,6 +49,17 @@ func WithProjectID(value string) Option {
 	return option("project ID", func(o *options) { o.config.ProjectID = value })
 }
 
+// WithAuthHubClientBoundProject selects the AuthHub immutable-client profile
+// instead of an explicit WithProjectID pin. Use only when the configured issuer
+// guarantees a client ID belongs permanently to one project and never reuses
+// that ID for another project. The project comes solely from a fully verified
+// signed ID token and remains pinned in each durable proof, refresh and binding.
+// No project is learned from unsigned metadata or cached as a first-login pin.
+// This option is not safe for a generic provider without the same guarantee.
+func WithAuthHubClientBoundProject() Option {
+	return option("project ID", func(o *options) { o.config.ClientBoundProject = true })
+}
+
 // WithOrigin supplies the exact application HTTPS origin, distinct from issuer.
 func WithOrigin(value string) Option {
 	return option("origin", func(o *options) { o.config.Origin = value })
@@ -98,6 +109,17 @@ func WithIngress(value *ingress.Policy) Option {
 			o.config.ProxyCIDRs = "explicit"
 		}
 	})
+}
+
+// WithHTTPSReverseProxy explicitly delegates incoming transport security to
+// the host application's HTTPS-only reverse proxy. The backend HTTP listener
+// must not be publicly reachable or accept requests outside that trusted edge.
+// This option does not verify network isolation, inspect forwarding headers or
+// fabricate TLS state. Exact Host, Origin/CSRF checks and Secure cookies remain
+// enforced, and issuer HTTPS verification is unchanged. Do not combine it with
+// WithIngress; without either option, requests require direct TLS.
+func WithHTTPSReverseProxy() Option {
+	return option("ingress", func(o *options) { o.config.HTTPSReverseProxy = true })
 }
 
 // WithRevocationEndpoint explicitly pins the revocation URL and takes precedence

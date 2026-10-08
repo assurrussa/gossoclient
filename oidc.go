@@ -242,7 +242,7 @@ func (c *oidcClient) verify(ctx context.Context, token *oauth2.Token, nonce stri
 	}
 	if id.Claims(&claims) != nil ||
 		!validTokenIdentity(id, c.config) ||
-		claims.ProjectID != c.config.ProjectID ||
+		!c.config.allowsProject(claims.ProjectID) ||
 		claims.Purpose != "id" ||
 		!uuidPattern.MatchString(claims.SID) ||
 		claims.AuthTime <= 0 {

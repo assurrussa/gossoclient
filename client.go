@@ -59,6 +59,15 @@ func (c Config) internal() config {
 // ValidateConfig checks exact origins and identity pins without network access.
 func ValidateConfig(c Config) error { return c.internal().validate() }
 
+// ValidateAuthHubClientConfig checks the same network-free settings for
+// WithAuthHubClientBoundProject. ProjectID must be empty; the issuer must satisfy
+// that option's immutable-client registration contract.
+func ValidateAuthHubClientConfig(c Config) error {
+	v := c.internal()
+	v.ClientBoundProject = true
+	return v.validate()
+}
+
 // ValidateIssuerEndpoint checks an explicit provider endpoint without network
 // access. Validate application identity/origin settings with ValidateConfig too.
 // For an absent optional central logout link, omit this check and its option.
@@ -80,10 +89,25 @@ func Schema() string { return schema }
 
 // NewPostgresStore fails closed on absent or partial durable schema.
 func NewPostgresStore(ctx context.Context, db *sql.DB) (*PostgresStore, error) {
+	return newPostgresStore(ctx, db, "")
+}
+
+// NewPostgresStoreWithSchema borrows the caller's existing pool and qualifies
+// every session query with schemaName. The schema must already be migrated;
+// construction never opens/closes a pool or changes connection search_path.
+// Names are case-sensitive ASCII identifiers of at most 63 bytes.
+func NewPostgresStoreWithSchema(ctx context.Context, db *sql.DB, schemaName string) (*PostgresStore, error) {
+	if err := validateStoreSchema(schemaName); err != nil {
+		return nil, err
+	}
+	return newPostgresStore(ctx, db, schemaName)
+}
+
+func newPostgresStore(ctx context.Context, db *sql.DB, schemaName string) (*PostgresStore, error) {
 	if db == nil {
 		return nil, errors.New("session database required")
 	}
-	s := &store{db: db}
+	s := &store{db: db, schema: schemaName}
 	if e := s.ready(ctx); e != nil {
 		return nil, e
 	}
@@ -218,7 +242,8 @@ func (c *Client) Handler(render func(http.ResponseWriter, *http.Request, View)) 
 
 func (a *app) validRequest(r *http.Request) bool {
 	u, _ := url.Parse(a.config.Origin)
-	return r != nil && u != nil && (r.TLS != nil || a.config.Ingress.Allows(r)) && r.Host == u.Host && len(r.RequestURI) <= 8192
+	return r != nil && u != nil && r.Host == u.Host && len(r.RequestURI) <= 8192 &&
+		(r.TLS != nil || a.config.HTTPSReverseProxy || a.config.Ingress.Allows(r))
 }
 
 // Verify checks browser binding, trusted ingress and durable validity, renewing
@@ -324,7 +349,7 @@ func (c *Client) Check(ctx context.Context, b Binding) (Proof, error) {
 	}
 	if v.Status != sessionActive || v.Generation != b.Generation ||
 		v.Proof == nil || v.Proof.Issuer != a.config.Issuer || v.Proof.ClientID != a.config.ClientID ||
-		v.Proof.ProjectID != a.config.ProjectID || b.Deadline.After(minTime(v.FreshUntil, v.AbsoluteUntil)) {
+		!a.config.allowsProject(v.Proof.ProjectID) || b.Deadline.After(minTime(v.FreshUntil, v.AbsoluteUntil)) {
 		return Proof{}, ErrDenied
 	}
 	if !matchesBinding(v, b) {
