@@ -32,6 +32,19 @@ Apply `browser.Schema()` through your application's explicit setup or migration
 process. Use an isolated PostgreSQL schema and configure every pooled connection
 consistently. Do not use the identity provider's database schema.
 
+When sharing the host application's existing pool, use
+`NewPostgresStoreWithSchema(ctx, db, "app_sso")`. It borrows that exact
+`*sql.DB` and schema-qualifies every session query, including row locks. Schema
+names are case-sensitive ASCII identifiers (`[A-Za-z_][A-Za-z0-9_]*`, at most
+63 bytes). The old constructor and table names remain unchanged.
+
+Create and migrate the selected schema in the host's normal migration process.
+`Schema()` still returns the existing unqualified DDL: apply it on an explicitly
+owned transaction with a safely quoted `SET LOCAL search_path` for that schema.
+Never issue a session-level `SET search_path` on a shared pool. The SDK does not
+create schemas, migrate, open another pool, change pool settings or close the
+host's pool. Existing rows can stay in the same schema without a data migration.
+
 After applying the schema:
 
 ```go
@@ -75,6 +88,16 @@ slashes and must have different hostnames. Different ports alone do not isolate
 browser cookies. Callback must equal the application origin plus `/callback`.
 Project ID must be a nonzero canonical UUID.
 
+For an AuthHub issuer that guarantees an immutable client-to-project
+registration and never reassigns a retained client ID, replace
+`WithProjectID(projectID)` with `WithAuthHubClientBoundProject()`. These options
+are mutually exclusive. The exact issuer and client audience remain mandatory;
+only a fully verified signed ID token can supply the canonical, nonzero
+`project_id`. Every proof and binding retains that project, and refresh,
+validity and logout checks preserve its pin. No first-login project cache or
+unsigned discovery/profile field supplies authority. Do not select this mode for
+a generic provider without the same immutable-registration guarantee.
+
 ### Provider endpoints
 
 `WithRevocationEndpoint` selects an explicit URL and takes precedence over
@@ -92,15 +115,28 @@ endpoint options are errors; omit the option instead.
 
 `ValidateConfig` and `ValidateIssuerEndpoint(issuer, endpoint)` support
 network-free configuration checks before opening the database or reading
-protected inputs.
+protected inputs. Use `ValidateAuthHubClientConfig` instead of `ValidateConfig`
+for the explicit client-bound AuthHub profile; it requires an empty ProjectID.
 
 ### Other supported options
 
 - `WithFreshness`: maximum signed-proof freshness, capped at five minutes; zero uses that cap
 - `WithIssuerCAFile`: public PEM trust roots for this client, replacing system roots
 - `WithIngress`: an immutable, explicitly verified private HTTP ingress policy behind an HTTPS edge; omitted or nil means direct TLS
+- `WithHTTPSReverseProxy()`: explicitly use the host application's HTTPS-only reverse proxy, instead of `WithIngress`
 
-There are no options to disable TLS, issuer validation, CSRF protection or
+`WithHTTPSReverseProxy()` relies on deployment isolation: the backend HTTP
+listener must not be published or reachable outside the trusted HTTPS edge, and
+the edge must enforce HTTPS for all browser traffic. The SDK cannot verify
+those deployment conditions. It does not inspect `Forwarded` or
+`X-Forwarded-*`, fabricate `r.TLS`, or use request headers to choose its origin.
+Exact configured Host, Origin/CSRF checks and Secure cookies remain enforced.
+Outbound issuer TLS and certificate/hostname validation are unchanged; ordinary
+publicly trusted HTTPS uses system roots and needs no custom CA file.
+The reverse-proxy option and `WithIngress` are mutually exclusive. Omitting both
+continues to require direct TLS.
+
+There are no options to disable issuer TLS validation, CSRF protection or
 freshness limits, and no arbitrary HTTP-client or transport hooks.
 
 Storage-key bytes are copied when the option is created and again for each

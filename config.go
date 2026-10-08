@@ -33,6 +33,8 @@ type config struct {
 	IssuerCAFile                                   string
 	Transport, ProxyCIDRs                          string
 	Ingress                                        *ingress.Policy
+	HTTPSReverseProxy                              bool
+	ClientBoundProject                             bool
 }
 
 const privateHTTPTransport = "private-http"
@@ -114,11 +116,22 @@ func validDNSHost(host string) bool {
 	return true
 }
 
-func (c config) validate() error {
+func (c config) validateIngress() error {
+	if c.HTTPSReverseProxy && (c.Ingress != nil || c.Transport != "" || c.ProxyCIDRs != "" ||
+		c.CertFile != "" || c.TLSKeyFile != "") {
+		return errors.New("HTTPS reverse proxy cannot be combined with other ingress settings")
+	}
 	if (c.Transport != "" && c.Transport != "tls" && c.Transport != privateHTTPTransport) ||
 		((c.Transport == "" || c.Transport == "tls") && c.ProxyCIDRs != "") ||
 		(c.Transport == privateHTTPTransport && (c.ProxyCIDRs == "" || c.CertFile != "" || c.TLSKeyFile != "")) {
 		return errors.New("invalid application ingress transport")
+	}
+	return nil
+}
+
+func (c config) validate() error {
+	if err := c.validateIngress(); err != nil {
+		return err
 	}
 	if c.Freshness < 0 || c.Freshness > 5*time.Minute {
 		return errors.New("freshness must be positive and at most five minutes")
@@ -135,11 +148,9 @@ func (c config) validate() error {
 		c.Callback != c.Origin+"/callback" {
 		return errors.New("issuer and app need distinct hostnames; callback must equal app origin + /callback")
 	}
-	if !uuidPattern.MatchString(c.ProjectID) ||
-		c.ProjectID == "00000000-0000-0000-0000-000000000000" ||
-		c.ClientID == "" ||
-		len(c.ClientID) > 256 ||
-		c.ClientID == c.ProjectID {
+	if c.ClientID == "" || len(c.ClientID) > 256 ||
+		(c.ClientBoundProject && c.ProjectID != "") ||
+		(!c.ClientBoundProject && !c.allowsProject(c.ProjectID)) {
 		return errors.New("distinct client ID and canonical project UUID required")
 	}
 	for _, endpoint := range []string{c.RevocationEndpoint, c.CentralLogoutURL} {
@@ -150,6 +161,14 @@ func (c config) validate() error {
 		}
 	}
 	return nil
+}
+
+// allowsProject validates a signed or protected durable project claim.
+// Client-bound mode relies on the provider's immutable client registration;
+// it never learns or mutates a global project pin from a request.
+func (c config) allowsProject(project string) bool {
+	return uuidPattern.MatchString(project) && project != "00000000-0000-0000-0000-000000000000" &&
+		project != c.ClientID && (c.ClientBoundProject || project == c.ProjectID)
 }
 
 // validateIssuerEndpoint accepts only an explicit path on the pinned HTTPS

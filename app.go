@@ -44,8 +44,7 @@ func (a *app) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	policy := "default-src 'none'; style-src 'unsafe-inline'; form-action 'self' " + a.config.Issuer
 	policy += "; base-uri 'none'; frame-ancestors 'none'"
 	w.Header().Set("Content-Security-Policy", policy)
-	u, _ := url.Parse(a.config.Origin)
-	if (r.TLS == nil && !a.config.Ingress.Allows(r)) || r.Host != u.Host || len(r.RequestURI) > 8192 {
+	if !a.validRequest(r) {
 		http.Error(w, "Invalid request", http.StatusBadRequest)
 		return
 	}
@@ -314,7 +313,7 @@ func (a *app) authorize(ctx context.Context, v session) (session, error) {
 	if v.Status != sessionActive || v.Proof == nil {
 		return v, errFenced
 	}
-	if v.Proof.Issuer != a.config.Issuer || v.Proof.ClientID != a.config.ClientID || v.Proof.ProjectID != a.config.ProjectID {
+	if v.Proof.Issuer != a.config.Issuer || v.Proof.ClientID != a.config.ClientID || !a.config.allowsProject(v.Proof.ProjectID) {
 		return v, a.terminate(ctx, v)
 	}
 	if !a.now().Before(v.AbsoluteUntil) {
@@ -341,7 +340,7 @@ func (a *app) authorize(ctx context.Context, v session) (session, error) {
 	}
 	if current.Proof.Issuer != a.config.Issuer ||
 		current.Proof.ClientID != a.config.ClientID ||
-		current.Proof.ProjectID != a.config.ProjectID {
+		!a.config.allowsProject(current.Proof.ProjectID) {
 		return current, a.terminate(ctx, current)
 	}
 	if !a.now().Before(current.AbsoluteUntil) {

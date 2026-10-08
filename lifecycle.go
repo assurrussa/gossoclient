@@ -25,7 +25,7 @@ func (c *Client) RevokeBinding(ctx context.Context, b Binding) error {
 func (c *Client) endBinding(parent context.Context, b Binding) error {
 	a := c.app
 	if b.Reference == "" || b.Generation <= 0 || b.LoginGeneration <= 0 ||
-		b.Issuer != a.config.Issuer || b.ClientID != a.config.ClientID || b.ProjectID != a.config.ProjectID {
+		b.Issuer != a.config.Issuer || b.ClientID != a.config.ClientID || !a.config.allowsProject(b.ProjectID) {
 		return ErrDenied
 	}
 	// Complete bounded logout intent even if the incoming request disconnects.
