@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Independent SSO app</title>
+<style>body{font:18px system-ui;max-width:48rem;margin:4rem auto;padding:1rem;line-height:1.5}button{font:inherit;padding:.5rem 1rem}dt{font-weight:600}dd{overflow-wrap:anywhere}</style>
+<h1>Independent SSO app</h1>{{if .Ready}}<p>Signed in with an independently verified provider identity.</p>
+<dl>
+<dt>Issuer</dt>
+<dd>{{.Session.Proof.Issuer}}</dd>
+<dt>Subject</dt>
+<dd>{{.Session.Proof.Subject}}</dd>
+<dt>Project</dt>
+<dd>{{.Session.Proof.ProjectID}}</dd>
+<dt>Verified until</dt>
+<dd>{{.Session.Proof.FreshUntil}}</dd>
+</dl>
+<h2>Display profile</h2>
+<dl>{{range $k,$v:=.Session.Proof.Profile}}<dt>{{$k}}</dt>
+<dd>{{$v}}</dd>{{else}}<dd>No exported profile fields</dd>{{end}}</dl>
+<h2>Display project attributes</h2>
+<dl>{{range $k,$v:=.Session.Proof.Project}}<dt>{{$k}}</dt>
+<dd>{{$v}}</dd>{{else}}<dd>No exported project fields</dd>{{end}}</dl>
+<p>Business roles and permissions belong to this application.</p>{{else}}<p>Sign in to view your subject and project. Interrupted or expired sign-in must start again.</p>
+<form method="post" action="/login">
+<input type="hidden" name="csrf" value="{{.Session.CSRF}}">
+<button>Sign in</button>
+</form>{{end}}<form method="post" action="/logout">
+<input type="hidden" name="csrf" value="{{.Session.CSRF}}">
+<button>Sign out of this app</button>
+</form>
+{{if .Central}}<p>
+<a href="{{.Central}}">Open central sign-out confirmation</a>
+</p>{{end}}
+</html>
