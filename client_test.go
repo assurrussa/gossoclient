@@ -121,11 +121,12 @@ func TestPublicProofPendingOwnerAndStorageFailures(t *testing.T) {
 const (
 	publicTestOrigin    = "https://app.test"
 	duplicateCookieCase = "duplicate-cookie"
+	plainHTTPCase       = "plain-http"
 )
 
 func TestPublicVerifyRejectsForgedIngressBeforeStorage(t *testing.T) {
 	c := &Client{app: &app{config: config{Origin: publicTestOrigin}, slots: make(chan struct{}, 1)}}
-	for _, kind := range []string{"plain-http", "wrong-host", "oversize", duplicateCookieCase} {
+	for _, kind := range []string{plainHTTPCase, "wrong-host", "oversize", duplicateCookieCase} {
 		t.Run(kind, func(t *testing.T) {
 			r, _ := http.NewRequestWithContext(t.Context(), http.MethodGet, "https://app.test/private", nil)
 			r.TLS = &tls.ConnectionState{}
@@ -134,7 +135,7 @@ func TestPublicVerifyRejectsForgedIngressBeforeStorage(t *testing.T) {
 				Secure: true, HttpOnly: true, SameSite: http.SameSiteLaxMode,
 			})
 			switch kind {
-			case "plain-http":
+			case plainHTTPCase:
 				r.TLS = nil
 				r.Header.Set("X-Forwarded-Proto", "https")
 			case "wrong-host":
