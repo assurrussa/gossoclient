@@ -267,10 +267,7 @@ func (c *oidcClient) verify(ctx context.Context, token *oauth2.Token, nonce stri
 		claims.AuthTime > id.IssuedAt.Unix()+30 {
 		return fail()
 	}
-	freshnessCap := c.config.Freshness
-	if freshnessCap == 0 {
-		freshnessCap = 5 * time.Minute
-	}
+	freshnessCap := c.freshnessLimit()
 	fresh := minTime(id.Expiry, id.IssuedAt.Add(freshnessCap), now.Add(freshnessCap))
 	absolute := time.Unix(claims.AuthTime, 0).Add(7 * 24 * time.Hour)
 	if prior != nil {
@@ -306,6 +303,14 @@ func (c *oidcClient) verify(ctx context.Context, token *oauth2.Token, nonce stri
 		Profile:            claims.Profile,
 		Project:            claims.Project,
 	}, nil
+}
+
+func (c *oidcClient) freshnessLimit() time.Duration {
+	freshnessCap := c.config.Freshness
+	if freshnessCap == 0 {
+		freshnessCap = 5 * time.Minute
+	}
+	return freshnessCap
 }
 
 func minTime(first time.Time, rest ...time.Time) time.Time {

@@ -22,9 +22,12 @@ func hostLogoutRequest(t *testing.T, a *app, cookie *http.Cookie) *http.Request 
 func TestHostLogoutRejectsInvalidRequestBeforeStorage(t *testing.T) {
 	a := &app{config: config{Origin: publicTestOrigin}, slots: make(chan struct{}, 1)}
 	c := &Client{app: a}
-	for _, kind := range []string{"get", "plain-http", "wrong-host", "missing-origin", "foreign-origin", "duplicate-origin", "foreign-fetch", "duplicate-cookie", "short-cookie", "malformed-cookie", "malformed-duplicate"} {
+	for _, kind := range []string{"get", "plain-http", "wrong-host", "missing-origin", "foreign-origin", "duplicate-origin", "foreign-fetch", duplicateCookieCase, "short-cookie", "malformed-cookie", "malformed-duplicate"} {
 		t.Run(kind, func(t *testing.T) {
-			r := hostLogoutRequest(t, a, &http.Cookie{Name: cookieName, Value: strings.Repeat("a", 43)})
+			r := hostLogoutRequest(t, a, &http.Cookie{
+				Name: cookieName, Value: strings.Repeat("a", 43),
+				Secure: true, HttpOnly: true, SameSite: http.SameSiteLaxMode,
+			})
 			switch kind {
 			case "get":
 				r.Method = http.MethodGet
@@ -41,8 +44,11 @@ func TestHostLogoutRejectsInvalidRequestBeforeStorage(t *testing.T) {
 				r.Header.Add("Origin", a.config.Origin)
 			case "foreign-fetch":
 				r.Header.Set("Sec-Fetch-Site", "cross-site")
-			case "duplicate-cookie":
-				r.AddCookie(&http.Cookie{Name: cookieName, Value: strings.Repeat("b", 43)})
+			case duplicateCookieCase:
+				r.AddCookie(&http.Cookie{
+					Name: cookieName, Value: strings.Repeat("b", 43),
+					Secure: true, HttpOnly: true, SameSite: http.SameSiteLaxMode,
+				})
 			case "malformed-cookie":
 				r.Header.Set("Cookie", cookieName+`="unterminated`)
 			case "malformed-duplicate":
