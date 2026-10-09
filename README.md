@@ -162,8 +162,28 @@ Render `View.CentralLogout` only when nonempty.
 
 Call `Verify(request)` on each protected browser request. Resolve the verified
 issuer and subject to an explicitly linked local account, then check your
-application's own permissions. Email and profile/project metadata are display
-data, not account-linking or authorization evidence.
+application's own permissions. Standard email/username claims and profile/project metadata are display
+data, not account-linking or authorization evidence. The optional, separately
+signed `authhub_identifiers` claim has the bounded versioned contract below.
+
+### Canonical AuthHub identifiers
+
+`Identity.AuthHubIdentifiers` is nil for old tokens and providers that omit the
+dedicated signed `authhub_identifiers` claim. Version 1 carries a required
+canonical, case-sensitive `login` and an optional lowercase `email_alias`,
+derived by AuthHub from its operator-administered canonical records. The alias
+is a login lookup identifier, not verified mailbox ownership. Invalid versions
+or malformed/noncanonical values fail verification. No standard or profile
+claim is promoted into this type, and returned snapshots are copied.
+
+These are issuance-time claims with the proof's existing freshness deadline,
+not live account lookups, immutable identity pins or permissions. Refresh may
+return renamed canonical identifiers for the same subject. Only an explicitly
+authorized host linking policy for the pinned issuer may use this claim.
+Identifier-based first-link should require a new successful callback; never
+use a restored old browser proof as evidence of a current identifier assignment.
+Preserve issuer/subject as the durable link and administer all local roles
+locally. This does not eliminate the normal issuance-to-admission race.
 
 ## Proofs and host sessions
 
@@ -207,6 +227,21 @@ Local terminal state commits before remote revocation:
 
 None of these results promises issuer-wide logout.
 
+`LogoutFromHost(w, r)` adapts a native local host logout when there is also an
+unlinked RP browser cookie. Call it only AFTER the host authenticates intentional
+logout and verifies its own session-bound CSRF token. It is not a standalone
+public route or a CSRF bypass for `Logout`. It still requires POST, the exact
+configured Origin, trusted ingress and an unambiguous browser cookie.
+
+It captures the current RP row once without Verify/refresh, then uses the same
+generation-fenced logout implementation. For an already admitted external host
+session, always use `RevokeBinding` on the saved ORIGINAL binding instead;
+capturing a new browser snapshot could otherwise target a newer login. Missing
+cookies or missing rows are explicit 303 local-only no-ops without cookie
+changes. Invalid input returns 400 unconfirmed, storage errors 503 unconfirmed;
+both preserve cookies. Existing active/pending row outcomes follow the table
+below.
+
 The HTTP `Logout` helper preserves these distinctions through status codes and
 the compatibility header `X-AuthHub-Logout-Scope`:
 
@@ -232,6 +267,7 @@ profile requirements remain enforced:
 - Same-origin authorization, token, JWKS and selected revocation endpoints
 - Required `project_id`, `token_use: "id"`, canonical UUID `sid` and positive `auth_time`
 - Optional bounded `authhub_profile` and `authhub_project` metadata
+- Optional signed `authhub_identifiers: {version: 1, login, email_alias?}` with canonical bounds
 - A new refresh token and verified ID token on successful refresh
 - Preserved identity/session pins across refresh, bounded freshness and a seven-day absolute lifetime
 - TLS 1.3 for provider connections

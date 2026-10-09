@@ -4,6 +4,7 @@ package browser
 import (
 	"context"
 	"crypto/tls"
+	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
@@ -105,17 +106,20 @@ func (t boundedTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 
 // Identity contains independently verified OIDC identity claims.
 type Identity struct {
-	Issuer        string            `json:"issuer"`
-	ClientID      string            `json:"client_id"`
-	Subject       string            `json:"subject"`
-	ProjectID     string            `json:"project_id"`
-	SessionID     string            `json:"sid"`
-	AuthTime      int64             `json:"auth_time"`
-	IssuedAt      time.Time         `json:"issued_at"`
-	FreshUntil    time.Time         `json:"fresh_until"`
-	AbsoluteUntil time.Time         `json:"absolute_until"`
-	Profile       map[string]string `json:"profile,omitempty"`
-	Project       map[string]string `json:"project,omitempty"`
+	// AuthHubIdentifiers is only populated from the dedicated, signed claim.
+	// Profile and standard email/username claims never supply this authority.
+	AuthHubIdentifiers *CanonicalIdentifiers `json:"authhub_identifiers,omitempty"`
+	Issuer             string                `json:"issuer"`
+	ClientID           string                `json:"client_id"`
+	Subject            string                `json:"subject"`
+	ProjectID          string                `json:"project_id"`
+	SessionID          string                `json:"sid"`
+	AuthTime           int64                 `json:"auth_time"`
+	IssuedAt           time.Time             `json:"issued_at"`
+	FreshUntil         time.Time             `json:"fresh_until"`
+	AbsoluteUntil      time.Time             `json:"absolute_until"`
+	Profile            map[string]string     `json:"profile,omitempty"`
+	Project            map[string]string     `json:"project,omitempty"`
 }
 type identity = Identity
 
@@ -233,12 +237,13 @@ func (c *oidcClient) verify(ctx context.Context, token *oauth2.Token, nonce stri
 		return fail()
 	}
 	var claims struct {
-		ProjectID string            `json:"project_id"`
-		Purpose   string            `json:"token_use"`
-		SID       string            `json:"sid"`
-		AuthTime  int64             `json:"auth_time"`
-		Profile   map[string]string `json:"authhub_profile"`
-		Project   map[string]string `json:"authhub_project"`
+		Identifiers json.RawMessage   `json:"authhub_identifiers"`
+		ProjectID   string            `json:"project_id"`
+		Purpose     string            `json:"token_use"`
+		SID         string            `json:"sid"`
+		AuthTime    int64             `json:"auth_time"`
+		Profile     map[string]string `json:"authhub_profile"`
+		Project     map[string]string `json:"authhub_project"`
 	}
 	if id.Claims(&claims) != nil ||
 		!validTokenIdentity(id, c.config) ||
@@ -246,6 +251,10 @@ func (c *oidcClient) verify(ctx context.Context, token *oauth2.Token, nonce stri
 		claims.Purpose != "id" ||
 		!uuidPattern.MatchString(claims.SID) ||
 		claims.AuthTime <= 0 {
+		return fail()
+	}
+	identifiers, valid := parseCanonicalIdentifiers(claims.Identifiers)
+	if !valid {
 		return fail()
 	}
 	if nonce != "" && id.Nonce != nonce {
@@ -284,17 +293,18 @@ func (c *oidcClient) verify(ctx context.Context, token *oauth2.Token, nonce stri
 		return fail()
 	}
 	return identity{
-		Issuer:        id.Issuer,
-		ClientID:      c.config.ClientID,
-		Subject:       id.Subject,
-		ProjectID:     claims.ProjectID,
-		SessionID:     claims.SID,
-		AuthTime:      claims.AuthTime,
-		IssuedAt:      id.IssuedAt,
-		FreshUntil:    fresh,
-		AbsoluteUntil: absolute,
-		Profile:       claims.Profile,
-		Project:       claims.Project,
+		AuthHubIdentifiers: identifiers,
+		Issuer:             id.Issuer,
+		ClientID:           c.config.ClientID,
+		Subject:            id.Subject,
+		ProjectID:          claims.ProjectID,
+		SessionID:          claims.SID,
+		AuthTime:           claims.AuthTime,
+		IssuedAt:           id.IssuedAt,
+		FreshUntil:         fresh,
+		AbsoluteUntil:      absolute,
+		Profile:            claims.Profile,
+		Project:            claims.Project,
 	}, nil
 }
 
