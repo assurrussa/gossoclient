@@ -22,7 +22,7 @@ func hostLogoutRequest(t *testing.T, a *app, cookie *http.Cookie) *http.Request 
 func TestHostLogoutRejectsInvalidRequestBeforeStorage(t *testing.T) {
 	a := &app{config: config{Origin: publicTestOrigin}, slots: make(chan struct{}, 1)}
 	c := &Client{app: a}
-	for _, kind := range []string{"get", plainHTTPCase, "wrong-host", "missing-origin", "foreign-origin", "duplicate-origin", "foreign-fetch", duplicateCookieCase, "short-cookie", "malformed-cookie", "malformed-duplicate"} {
+	for _, kind := range []string{"get", plainHTTPCase, wrongHostCase, "missing-origin", "foreign-origin", "duplicate-origin", "foreign-fetch", duplicateCookieCase, "short-cookie", "malformed-cookie", "malformed-duplicate"} {
 		t.Run(kind, func(t *testing.T) {
 			r := hostLogoutRequest(t, a, &http.Cookie{
 				Name: cookieName, Value: strings.Repeat("a", 43),
@@ -34,7 +34,7 @@ func TestHostLogoutRejectsInvalidRequestBeforeStorage(t *testing.T) {
 			case plainHTTPCase:
 				r.TLS = nil
 				r.Header.Set("X-Forwarded-Proto", "https")
-			case "wrong-host":
+			case wrongHostCase:
 				r.Host = "evil.test"
 			case "missing-origin":
 				r.Header.Del("Origin")
