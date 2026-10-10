@@ -118,11 +118,16 @@ func TestPublicProofPendingOwnerAndStorageFailures(t *testing.T) {
 	}
 }
 
-const publicTestOrigin = "https://app.test"
+const (
+	publicTestOrigin    = "https://app.test"
+	duplicateCookieCase = "duplicate-cookie"
+	plainHTTPCase       = "plain-http"
+	wrongHostCase       = "wrong-host"
+)
 
 func TestPublicVerifyRejectsForgedIngressBeforeStorage(t *testing.T) {
 	c := &Client{app: &app{config: config{Origin: publicTestOrigin}, slots: make(chan struct{}, 1)}}
-	for _, kind := range []string{"plain-http", "wrong-host", "oversize", "duplicate-cookie"} {
+	for _, kind := range []string{plainHTTPCase, wrongHostCase, "oversize", duplicateCookieCase} {
 		t.Run(kind, func(t *testing.T) {
 			r, _ := http.NewRequestWithContext(t.Context(), http.MethodGet, "https://app.test/private", nil)
 			r.TLS = &tls.ConnectionState{}
@@ -131,14 +136,14 @@ func TestPublicVerifyRejectsForgedIngressBeforeStorage(t *testing.T) {
 				Secure: true, HttpOnly: true, SameSite: http.SameSiteLaxMode,
 			})
 			switch kind {
-			case "plain-http":
+			case plainHTTPCase:
 				r.TLS = nil
 				r.Header.Set("X-Forwarded-Proto", "https")
-			case "wrong-host":
+			case wrongHostCase:
 				r.Host = "forged.invalid"
 			case "oversize":
 				r.RequestURI = strings.Repeat("x", 8193)
-			case "duplicate-cookie":
+			case duplicateCookieCase:
 				r.AddCookie(&http.Cookie{
 					Name: cookieName, Value: strings.Repeat("b", 43),
 					Secure: true, HttpOnly: true, SameSite: http.SameSiteLaxMode,
