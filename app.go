@@ -316,7 +316,7 @@ func (a *app) authorize(ctx context.Context, v session) (session, error) {
 	if v.Proof.Issuer != a.config.Issuer || v.Proof.ClientID != a.config.ClientID || !a.config.allowsProject(v.Proof.ProjectID) {
 		return v, a.terminate(ctx, v)
 	}
-	if !a.now().Before(v.AbsoluteUntil) {
+	if !a.now().Before(effectiveAbsolute(v)) {
 		return v, a.terminate(ctx, v)
 	}
 	// Refresh shortly before expiry. Only the durable winner sends a request.
@@ -324,7 +324,9 @@ func (a *app) authorize(ctx context.Context, v session) (session, error) {
 	if lead == 0 {
 		lead = 30 * time.Second
 	}
-	if !a.now().Before(v.FreshUntil.Add(-lead)) && v.RefreshState == refreshReady {
+	// Legacy snapshots are routing/refresh hints only, never cached authority.
+	needsUpgrade := v.Proof.SessionExpiresAt.IsZero()
+	if (needsUpgrade || !a.now().Before(v.FreshUntil.Add(-lead))) && v.RefreshState == refreshReady {
 		if e := a.refresh(ctx, v); e != nil {
 			return v, e
 		}
@@ -343,13 +345,13 @@ func (a *app) authorize(ctx context.Context, v session) (session, error) {
 		!a.config.allowsProject(current.Proof.ProjectID) {
 		return current, a.terminate(ctx, current)
 	}
-	if !a.now().Before(current.AbsoluteUntil) {
+	if !a.now().Before(effectiveAbsolute(current)) {
 		return current, a.terminate(ctx, current)
 	}
 	if current.RefreshState != refreshReady && current.RefreshState != "uncertain" {
 		return current, errRefreshPending
 	}
-	if !a.now().Before(current.FreshUntil) {
+	if current.Proof.SessionExpiresAt.IsZero() || !a.now().Before(current.FreshUntil) {
 		return current, errFenced
 	}
 	return current, nil
@@ -377,7 +379,7 @@ func (a *app) refresh(ctx context.Context, v session) error {
 		return a.store.uncertain(ctx, v, owner)
 	}
 	p, verifyErr := a.oidc.verify(ctx, next, "", v.Proof)
-	if !a.now().Before(v.AbsoluteUntil) {
+	if !a.now().Before(effectiveAbsolute(v)) {
 		verifyErr = errFenced
 	}
 	// oauth2 copies the old secret if the server omits it. Rotation requires a new one.

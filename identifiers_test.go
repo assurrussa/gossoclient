@@ -83,7 +83,7 @@ func TestCanonicalIdentifiersSnapshotCopiesAndPersistence(t *testing.T) {
 	row := session{
 		ID: "session", Status: sessionActive, Generation: 1, LoginGeneration: 1,
 		FreshUntil: now.Add(time.Minute), AbsoluteUntil: now.Add(time.Hour),
-		Proof: &identity{AuthHubIdentifiers: original, AbsoluteUntil: now.Add(time.Hour)},
+		Proof: &identity{AuthHubIdentifiers: original, AbsoluteUntil: now.Add(time.Hour), SessionExpiresAt: now.Add(time.Hour)},
 	}
 	a := &app{now: func() time.Time { return now }}
 	proof := a.proof(row)
