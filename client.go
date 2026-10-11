@@ -203,14 +203,14 @@ func (p Proof) Deadline() time.Time { return p.deadline }
 
 func (a *app) proof(v session) *Proof {
 	if v.Status != sessionActive || v.Proof == nil || v.LoginGeneration <= 0 ||
-		!a.now().Before(minTime(v.FreshUntil, v.AbsoluteUntil)) {
+		v.Proof.SessionExpiresAt.IsZero() || !a.now().Before(minTime(v.FreshUntil, effectiveAbsolute(v))) {
 		return nil
 	}
 	p := &Proof{
 		loginGeneration: v.LoginGeneration, identity: *v.Proof, reference: v.ID,
-		generation: v.Generation, deadline: minTime(v.FreshUntil, v.AbsoluteUntil),
+		generation: v.Generation, deadline: minTime(v.FreshUntil, effectiveAbsolute(v)),
 	}
-	p.identity.AbsoluteUntil = minTime(p.identity.AbsoluteUntil, v.AbsoluteUntil)
+	p.identity.AbsoluteUntil = effectiveAbsolute(v)
 	p.identity.FreshUntil = p.deadline
 	p.identity.Profile = cloneMetadata(p.identity.Profile)
 	p.identity.Project = cloneMetadata(p.identity.Project)
@@ -351,7 +351,8 @@ func (c *Client) Check(ctx context.Context, b Binding) (Proof, error) {
 	}
 	if v.Status != sessionActive || v.Generation != b.Generation ||
 		v.Proof == nil || v.Proof.Issuer != a.config.Issuer || v.Proof.ClientID != a.config.ClientID ||
-		!a.config.allowsProject(v.Proof.ProjectID) || b.Deadline.After(minTime(v.FreshUntil, v.AbsoluteUntil)) {
+		!a.config.allowsProject(v.Proof.ProjectID) || v.Proof.SessionExpiresAt.IsZero() ||
+		b.Deadline.After(minTime(v.FreshUntil, effectiveAbsolute(v))) {
 		return Proof{}, ErrDenied
 	}
 	if !matchesBinding(v, b) {

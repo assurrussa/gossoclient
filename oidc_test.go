@@ -35,6 +35,7 @@ type authority struct {
 	signer           jose.Signer
 	key              *rsa.PrivateKey
 	now              time.Time
+	sessionEnd       time.Time
 	mu               sync.Mutex
 	nonce, challenge string
 	claims           func(map[string]any)
@@ -56,6 +57,7 @@ func newAuthority(t *testing.T) *authority {
 		t.Fatal(e)
 	}
 	p := &authority{t: t, key: key, signer: signer, now: time.Now().UTC().Truncate(time.Second)}
+	p.sessionEnd = p.now.Add(-time.Minute).Add(7 * 24 * time.Hour)
 	p.server = httptest.NewTLSServer(http.HandlerFunc(p.serve))
 	t.Cleanup(p.server.Close)
 	return p
@@ -65,6 +67,7 @@ func (p *authority) token(nonce string) string {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	claims := map[string]any{"iss": p.server.URL, "sub": "subject-123", "aud": "client-123", "iat": p.now.Unix(), "exp": p.now.Add(5 * time.Minute).Unix(), "auth_time": p.now.Add(-time.Minute).Unix(), "sid": testSID, "project_id": testProject, "token_use": "id", "nonce": nonce, "authhub_profile": map[string]string{"display_name": "Example"}}
+	claims["session_expires_at"] = p.sessionEnd
 	if p.claims != nil {
 		p.claims(claims)
 	}

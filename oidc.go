@@ -118,8 +118,11 @@ type Identity struct {
 	IssuedAt           time.Time             `json:"issued_at"`
 	FreshUntil         time.Time             `json:"fresh_until"`
 	AbsoluteUntil      time.Time             `json:"absolute_until"`
-	Profile            map[string]string     `json:"profile,omitempty"`
-	Project            map[string]string     `json:"project,omitempty"`
+	// SessionExpiresAt is the verified provider deadline, before local caps.
+	// Zero identifies legacy stored proofs that must refresh before admission.
+	SessionExpiresAt time.Time         `json:"session_expires_at"`
+	Profile          map[string]string `json:"profile,omitempty"`
+	Project          map[string]string `json:"project,omitempty"`
 }
 type identity = Identity
 
@@ -237,13 +240,14 @@ func (c *oidcClient) verify(ctx context.Context, token *oauth2.Token, nonce stri
 		return fail()
 	}
 	var claims struct {
-		Identifiers json.RawMessage   `json:"authhub_identifiers"`
-		ProjectID   string            `json:"project_id"`
-		Purpose     string            `json:"token_use"`
-		SID         string            `json:"sid"`
-		AuthTime    int64             `json:"auth_time"`
-		Profile     map[string]string `json:"authhub_profile"`
-		Project     map[string]string `json:"authhub_project"`
+		Identifiers      json.RawMessage   `json:"authhub_identifiers"`
+		ProjectID        string            `json:"project_id"`
+		Purpose          string            `json:"token_use"`
+		SID              string            `json:"sid"`
+		AuthTime         int64             `json:"auth_time"`
+		SessionExpiresAt time.Time         `json:"session_expires_at"`
+		Profile          map[string]string `json:"authhub_profile"`
+		Project          map[string]string `json:"authhub_project"`
 	}
 	if id.Claims(&claims) != nil ||
 		!validTokenIdentity(id, c.config) ||
@@ -261,15 +265,12 @@ func (c *oidcClient) verify(ctx context.Context, token *oauth2.Token, nonce stri
 		return fail()
 	}
 	now := c.now()
-	if id.IssuedAt.IsZero() ||
-		id.IssuedAt.After(now.Add(30*time.Second)) ||
-		!id.Expiry.After(id.IssuedAt) ||
-		claims.AuthTime > id.IssuedAt.Unix()+30 {
+	if !validIdentityTimes(id, claims.AuthTime, claims.SessionExpiresAt, now) {
 		return fail()
 	}
 	freshnessCap := c.freshnessLimit()
 	fresh := minTime(id.Expiry, id.IssuedAt.Add(freshnessCap), now.Add(freshnessCap))
-	absolute := time.Unix(claims.AuthTime, 0).Add(7 * 24 * time.Hour)
+	absolute := claims.SessionExpiresAt
 	if prior != nil {
 		if id.Issuer != prior.Issuer ||
 			c.config.ClientID != prior.ClientID ||
@@ -277,6 +278,7 @@ func (c *oidcClient) verify(ctx context.Context, token *oauth2.Token, nonce stri
 			claims.ProjectID != prior.ProjectID ||
 			claims.SID != prior.SessionID ||
 			claims.AuthTime != prior.AuthTime ||
+			(!prior.SessionExpiresAt.IsZero() && !claims.SessionExpiresAt.Equal(prior.SessionExpiresAt)) ||
 			id.IssuedAt.Before(prior.IssuedAt) {
 			return fail()
 		}
@@ -300,9 +302,22 @@ func (c *oidcClient) verify(ctx context.Context, token *oauth2.Token, nonce stri
 		IssuedAt:           id.IssuedAt,
 		FreshUntil:         fresh,
 		AbsoluteUntil:      absolute,
+		SessionExpiresAt:   claims.SessionExpiresAt,
 		Profile:            claims.Profile,
 		Project:            claims.Project,
 	}, nil
+}
+
+func validIdentityTimes(id *oidc.IDToken, authTime int64, sessionExpiresAt, now time.Time) bool {
+	return !id.IssuedAt.IsZero() &&
+		!id.IssuedAt.After(now.Add(30*time.Second)) &&
+		id.Expiry.After(id.IssuedAt) &&
+		authTime <= id.IssuedAt.Unix()+30 &&
+		!sessionExpiresAt.IsZero() &&
+		now.Before(sessionExpiresAt) &&
+		sessionExpiresAt.After(time.Unix(authTime, 0)) &&
+		sessionExpiresAt.After(id.IssuedAt) &&
+		!id.Expiry.After(sessionExpiresAt)
 }
 
 func (c *oidcClient) freshnessLimit() time.Duration {

@@ -188,7 +188,18 @@ locally. This does not eliminate the normal issuance-to-admission race.
 ## Proofs and host sessions
 
 A `Proof` is an immutable snapshot with a fixed deadline. Never convert that
-deadline into a rolling local TTL.
+deadline into a rolling local TTL. `Identity.SessionExpiresAt` is the verified
+provider session deadline; `Identity.AbsoluteUntil` is additionally capped by
+the existing local browser-session lifetime. Token `exp` caps proof freshness,
+not the full login lifetime. Missing or malformed `session_expires_at` fails
+closed; the client never substitutes `auth_time + 7 days`.
+
+Stored proofs from older versions cannot authorize locally until upgraded.
+`Verify` can upgrade them through one ordinary, single-owner refresh with a
+new strictly verified signed deadline, preserving identity and login lineage.
+`Check` does not refresh and denies those legacy snapshots. Unknown refresh
+outcomes are not replayed. An unsuccessful upgrade never authorizes from the
+old cached proof; fresh interactive login is needed when refresh cannot recover.
 
 For a host-owned session, persist the complete `Proof.Binding()`, including
 `LoginGeneration` and the original deadline. Bindings belong in protected
@@ -269,7 +280,8 @@ profile requirements remain enforced:
 - Optional bounded `authhub_profile` and `authhub_project` metadata
 - Optional signed `authhub_identifiers: {version: 1, login, email_alias?}` with canonical bounds
 - A new refresh token and verified ID token on successful refresh
-- Preserved identity/session pins across refresh, bounded freshness and a seven-day absolute lifetime
+- Required signed RFC3339 `session_expires_at` in the verified ID token
+- Preserved identity/session pins and provider deadline across refresh, bounded freshness and a non-extending local absolute lifetime
 - TLS 1.3 for provider connections
 
 Configurable URLs do not remove these requirements or establish interoperability

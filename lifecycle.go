@@ -14,7 +14,9 @@ var ErrRevocationUnconfirmed = errors.New("local logout committed; central revoc
 // It ends the current generation and refresh descendants of this same login.
 // A subsequent login has a different LoginGeneration and cannot be revoked by
 // this old binding, even when all central identity claims are unchanged.
-// Expired freshness does not cancel logout intent. AbsoluteUntil is a pin.
+// Expired freshness does not cancel logout intent. A strictly newer generation
+// may have tightened AbsoluteUntil during legacy signed-deadline upgrade; that
+// same-lineage descendant remains a permitted logout target.
 // Unknown local commit returns ErrUnavailable; no automatic retry or remote
 // revoke follows it. ErrRevocationUnconfirmed confirms local termination only.
 // Caller must enforce logout request authentication and CSRF protection.
