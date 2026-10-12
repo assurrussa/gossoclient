@@ -5,6 +5,7 @@ import (
 	"crypto"
 	"crypto/rand"
 	"crypto/rsa"
+	"encoding/base64"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -145,4 +146,62 @@ func TestMFAAdvisoryCopiesAndStoredCompatibility(t *testing.T) {
 	if (&app{now: func() time.Time { return now }}).proof(row) != nil {
 		t.Fatal("expired proof exposed hint")
 	}
+}
+
+func TestMFAAdvisoryDuplicateOuterClaimDoesNotBreakLoginOrRenewal(t *testing.T) {
+	p, c := newMFAAuthority(t)
+	p.claims = func(m map[string]any) {
+		m["authhub_mfa"] = map[string]any{"version": 1, "enrolled": false, "setup_available": true}
+	}
+	first, err := c.verify(t.Context(), (&oauth2.Token{}).WithExtra(map[string]any{"id_token": p.token("nonce")}), "nonce", nil)
+	if err != nil || first.AuthHubMFA == nil || first.AuthHubMFA.Enrolled {
+		t.Fatal("initial signed advisory missing", err)
+	}
+	p.now = p.now.Add(time.Minute)
+	p.claims = func(m map[string]any) { m["auth_time"] = first.AuthTime }
+	for _, tc := range []struct{ name, fields string }{
+		{"false_then_true", `"authhub_mfa":{"version":1,"enrolled":false,"setup_available":true},"authhub_mfa":{"version":1,"enrolled":true,"setup_available":true}`},
+		{"true_then_false", `"authhub_mfa":{"version":1,"enrolled":true,"setup_available":true},"authhub_mfa":{"version":1,"enrolled":false,"setup_available":true}`},
+		{"same_value", `"authhub_mfa":{"version":1,"enrolled":false,"setup_available":true},"authhub_mfa":{"version":1,"enrolled":false,"setup_available":true}`},
+		{"null_then_valid", `"authhub_mfa":null,"authhub_mfa":{"version":1,"enrolled":false,"setup_available":true}`},
+		{"valid_then_null", `"authhub_mfa":{"version":1,"enrolled":false,"setup_available":true},"authhub_mfa":null`},
+		{"case_alias", `"authhub_mfa":{"version":1,"enrolled":true,"setup_available":true},"AUTHHUB_MFA":{"version":1,"enrolled":false,"setup_available":true}`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			token := signedMFAOuterFields(t, p, tc.fields)
+			for _, prior := range []*identity{nil, &first} {
+				id, verifyErr := c.verify(t.Context(), token, "nonce", prior)
+				if verifyErr != nil || id.AuthHubMFA != nil {
+					t.Fatal("duplicate advisory affected authentication or survived projection", verifyErr)
+				}
+				if id.Subject != first.Subject || id.SessionID != first.SessionID || id.AuthTime != first.AuthTime {
+					t.Fatal("duplicate advisory changed authenticated identity")
+				}
+			}
+		})
+	}
+	if first.AuthHubMFA == nil || first.AuthHubMFA.Enrolled || !first.AuthHubMFA.SetupAvailable {
+		t.Fatal("renewal changed the earlier advisory snapshot")
+	}
+}
+
+// Sign the duplicate-bearing bytes themselves; map encoding cannot represent
+// duplicate outer members. The ordinary verifier still checks this signature.
+func signedMFAOuterFields(t *testing.T, p *authority, fields string) *oauth2.Token {
+	t.Helper()
+	parts := strings.Split(p.token("nonce"), ".")
+	raw, err := base64.RawURLEncoding.DecodeString(parts[1])
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw = append(raw[:len(raw)-1], []byte(","+fields+"}")...)
+	signed, err := p.signer.Sign(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	compact, err := signed.CompactSerialize()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return (&oauth2.Token{}).WithExtra(map[string]any{"id_token": compact})
 }

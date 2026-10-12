@@ -243,7 +243,6 @@ func (c *oidcClient) verify(ctx context.Context, token *oauth2.Token, nonce stri
 	}
 	var claims struct {
 		Identifiers      json.RawMessage   `json:"authhub_identifiers"`
-		MFA              json.RawMessage   `json:"authhub_mfa"`
 		ProjectID        string            `json:"project_id"`
 		Purpose          string            `json:"token_use"`
 		SID              string            `json:"sid"`
@@ -296,7 +295,7 @@ func (c *oidcClient) verify(ctx context.Context, token *oauth2.Token, nonce stri
 	}
 	return identity{
 		AuthHubIdentifiers: identifiers,
-		AuthHubMFA:         parseMFAEnrollment(claims.MFA),
+		AuthHubMFA:         verifiedMFAEnrollment(id),
 		Issuer:             id.Issuer,
 		ClientID:           c.config.ClientID,
 		Subject:            id.Subject,
