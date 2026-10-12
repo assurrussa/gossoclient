@@ -178,6 +178,7 @@ func (p Proof) Identity() Identity {
 	v.Profile = cloneMetadata(v.Profile)
 	v.Project = cloneMetadata(v.Project)
 	v.AuthHubIdentifiers = cloneCanonicalIdentifiers(v.AuthHubIdentifiers)
+	v.AuthHubMFA = cloneMFAEnrollment(v.AuthHubMFA)
 	return v
 }
 
@@ -215,6 +216,7 @@ func (a *app) proof(v session) *Proof {
 	p.identity.Profile = cloneMetadata(p.identity.Profile)
 	p.identity.Project = cloneMetadata(p.identity.Project)
 	p.identity.AuthHubIdentifiers = cloneCanonicalIdentifiers(p.identity.AuthHubIdentifiers)
+	p.identity.AuthHubMFA = cloneMFAEnrollment(p.identity.AuthHubMFA)
 	return p
 }
 

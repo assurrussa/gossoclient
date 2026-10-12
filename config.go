@@ -27,6 +27,7 @@ import (
 type config struct {
 	Issuer, ClientID, ProjectID, Origin, Callback  string
 	RevocationEndpoint, CentralLogoutURL           string
+	CurrentSessionLogoutEndpoint                   string
 	ClientSecretFile, StorageKeyFile, DatabaseFile string
 	Addr, CertFile, TLSKeyFile                     string
 	Freshness                                      time.Duration
@@ -153,7 +154,7 @@ func (c config) validate() error {
 		(!c.ClientBoundProject && !c.allowsProject(c.ProjectID)) {
 		return errors.New("distinct client ID and canonical project UUID required")
 	}
-	for _, endpoint := range []string{c.RevocationEndpoint, c.CentralLogoutURL} {
+	for _, endpoint := range []string{c.RevocationEndpoint, c.CentralLogoutURL, c.CurrentSessionLogoutEndpoint} {
 		if endpoint != "" {
 			if err := validateIssuerEndpoint(endpoint, c.Issuer); err != nil {
 				return err
