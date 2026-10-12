@@ -322,6 +322,21 @@ Test the selected provider profile and your application integration before
 deployment. Authentication failures and uncertain storage/network outcomes must
 remain fail-closed.
 
+## Optional MFA setup reminder
+
+Identity.AuthHubMFA is populated only from the verified, profile-scoped
+authhub_mfa ID-token claim. Version 1 includes explicit enrolled and
+setup_available booleans. It is an advisory issuance snapshot, not amr, MFA
+authentication strength, a session pin, or an admission rule.
+
+Missing, malformed, duplicate-field, incomplete, and unknown-version hints are
+hidden without breaking authentication. Normal refresh replaces or clears the
+snapshot; no extra polling or refresh is needed. Proof.Identity returns a copy.
+Only use it while the owning Proof is valid, and show a nonblocking reminder
+only when unenrolled and setup-available. Use an application-configured,
+validated account URL on the trusted issuer, never a link from token metadata.
+Do not interrupt successful login or infer factor enrollment from amr/profile.
+
 ## License
 
 [MIT](LICENSE). Dependencies retain their respective licenses.

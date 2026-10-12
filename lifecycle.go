@@ -43,7 +43,7 @@ func (c *Client) endBinding(parent context.Context, b Binding) error {
 	}
 	ctx, cancel = context.WithTimeout(context.WithoutCancel(parent), 8*time.Second)
 	defer cancel()
-	if e = a.oidc.revoke(ctx, secret); e != nil {
+	if e = a.oidc.revokeForLogout(ctx, secret); e != nil {
 		return ErrRevocationUnconfirmed
 	}
 	return nil

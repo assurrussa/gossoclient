@@ -134,6 +134,14 @@ func WithCentralLogoutURL(value string) Option {
 	return option("central logout URL", func(o *options) { o.config.CentralLogoutURL = value })
 }
 
+// WithCurrentSessionLogoutEndpoint opts intentional user logout into AuthHub's
+// token-bound current-session contract. Cleanup still uses ordinary revocation.
+// The endpoint must confirm X-AuthHub-Logout-Scope: current-session; HTTP 200
+// alone is insufficient. This option does not clear the issuer browser cookie.
+func WithCurrentSessionLogoutEndpoint(value string) Option {
+	return option("current session logout endpoint", func(o *options) { o.config.CurrentSessionLogoutEndpoint = value })
+}
+
 func buildOptions(values []Option) (config, Options, error) {
 	o := options{seen: make(map[string]bool)}
 	for _, value := range values {
@@ -156,7 +164,8 @@ func buildOptions(values []Option) (config, Options, error) {
 	// An explicitly empty endpoint is almost always a configuration error.
 	// Omit the option to use discovery or to disable the optional landing link.
 	if (o.seen["revocation endpoint"] && o.config.RevocationEndpoint == "") ||
-		(o.seen["central logout URL"] && o.config.CentralLogoutURL == "") {
+		(o.seen["central logout URL"] && o.config.CentralLogoutURL == "") ||
+		(o.seen["current session logout endpoint"] && o.config.CurrentSessionLogoutEndpoint == "") {
 		return config{}, Options{}, errors.New("explicit endpoint must not be empty")
 	}
 	if err := o.config.validate(); err != nil {

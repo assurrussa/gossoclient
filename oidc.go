@@ -109,15 +109,17 @@ type Identity struct {
 	// AuthHubIdentifiers is only populated from the dedicated, signed claim.
 	// Profile and standard email/username claims never supply this authority.
 	AuthHubIdentifiers *CanonicalIdentifiers `json:"authhub_identifiers,omitempty"`
-	Issuer             string                `json:"issuer"`
-	ClientID           string                `json:"client_id"`
-	Subject            string                `json:"subject"`
-	ProjectID          string                `json:"project_id"`
-	SessionID          string                `json:"sid"`
-	AuthTime           int64                 `json:"auth_time"`
-	IssuedAt           time.Time             `json:"issued_at"`
-	FreshUntil         time.Time             `json:"fresh_until"`
-	AbsoluteUntil      time.Time             `json:"absolute_until"`
+	// AuthHubMFA is an advisory issuance snapshot, never authentication strength.
+	AuthHubMFA    *MFAEnrollment `json:"authhub_mfa,omitempty"`
+	Issuer        string         `json:"issuer"`
+	ClientID      string         `json:"client_id"`
+	Subject       string         `json:"subject"`
+	ProjectID     string         `json:"project_id"`
+	SessionID     string         `json:"sid"`
+	AuthTime      int64          `json:"auth_time"`
+	IssuedAt      time.Time      `json:"issued_at"`
+	FreshUntil    time.Time      `json:"fresh_until"`
+	AbsoluteUntil time.Time      `json:"absolute_until"`
 	// SessionExpiresAt is the verified provider deadline, before local caps.
 	// Zero identifies legacy stored proofs that must refresh before admission.
 	SessionExpiresAt time.Time         `json:"session_expires_at"`
@@ -293,6 +295,7 @@ func (c *oidcClient) verify(ctx context.Context, token *oauth2.Token, nonce stri
 	}
 	return identity{
 		AuthHubIdentifiers: identifiers,
+		AuthHubMFA:         verifiedMFAEnrollment(id),
 		Issuer:             id.Issuer,
 		ClientID:           c.config.ClientID,
 		Subject:            id.Subject,
@@ -366,12 +369,26 @@ func definitive(err error) bool {
 			e.ErrorCode == "unauthorized_client")
 }
 
+func (c *oidcClient) revokeForLogout(ctx context.Context, secret string) error {
+	if c.config.CurrentSessionLogoutEndpoint == "" {
+		return c.revoke(ctx, secret)
+	}
+	return c.revokeAt(ctx, secret, c.config.CurrentSessionLogoutEndpoint, true)
+}
+
 func (c *oidcClient) revoke(ctx context.Context, secret string) error {
+	return c.revokeAt(ctx, secret, c.config.RevocationEndpoint, false)
+}
+
+func (c *oidcClient) revokeAt(ctx context.Context, secret, endpoint string, currentSession bool) error {
 	if secret == "" {
+		if currentSession {
+			return errors.New("current session logout requires a token")
+		}
 		return nil
 	}
 	form := url.Values{"token": {secret}, "token_type_hint": {"refresh_token"}}
-	req, e := http.NewRequestWithContext(ctx, http.MethodPost, c.config.RevocationEndpoint, strings.NewReader(form.Encode()))
+	req, e := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, strings.NewReader(form.Encode()))
 	if e != nil {
 		return e
 	}
@@ -383,7 +400,8 @@ func (c *oidcClient) revoke(ctx context.Context, secret string) error {
 	}
 	defer func() { _ = res.Body.Close() }()
 	_, e = io.Copy(io.Discard, res.Body)
-	if e != nil || res.StatusCode != http.StatusOK {
+	if e != nil || res.StatusCode != http.StatusOK ||
+		(currentSession && res.Header.Get("X-AuthHub-Logout-Scope") != "current-session") {
 		return errors.New("revocation unavailable")
 	}
 	return nil
