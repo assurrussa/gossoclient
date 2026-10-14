@@ -1,11 +1,11 @@
 package browser
 
 import (
-"context"
-"database/sql"
-"encoding/json"
-"errors"
-"time"
+	"context"
+	"database/sql"
+	"encoding/json"
+	"errors"
+	"time"
 )
 
 func (s *sqliteStore) create(ctx context.Context, id, csrf string, until time.Time) error {
@@ -17,7 +17,6 @@ $3)
 	return e
 }
 
-
 func (s *sqliteStore) load(ctx context.Context, id string) (session, error) {
 	// #nosec G202 -- Table names are fixed; arguments are bound.
 	return loadSQLiteSession(s.queryRowContext(ctx, `
@@ -25,7 +24,6 @@ SELECT cookie_digest, generation, status, csrf, proof, fresh_until, absolute_unt
 refresh_state, refresh_owner FROM `+s.table("sso_example_sessions")+` WHERE cookie_digest=$1
 `, id))
 }
-
 
 func (s *sqliteStore) lockSession(ctx context.Context, tx *sqliteTx, id string) error {
 	var locked string
@@ -39,12 +37,12 @@ SELECT cookie_digest FROM `+s.table("sso_example_sessions")+` WHERE cookie_diges
 	return e
 }
 
-
 func (s *sqliteStore) begin(ctx context.Context, l *login) error {
 	tx, e := s.beginImmediate(ctx)
 	if e != nil {
 		return e
 	}
+	//nolint:contextcheck // Rollback uses a fresh one-second context so canceled requests cannot leak a transaction.
 	defer func() { _ = tx.Rollback() }()
 	if e = s.lockSession(ctx, tx, l.SessionID); e != nil {
 		return e
@@ -76,12 +74,12 @@ return_path, expires_at) VALUES($1, $2, $3, $4, $5, $6, $7)
 	return tx.Commit(ctx) // An unknown commit is never retried.
 }
 
-
 func (s *sqliteStore) claimLogin(ctx context.Context, state, id string) (login, error) {
 	tx, e := s.beginImmediate(ctx)
 	if e != nil {
 		return login{}, e
 	}
+	//nolint:contextcheck // Rollback uses a fresh one-second context so canceled requests cannot leak a transaction.
 	defer func() { _ = tx.Rollback() }()
 	if e = s.lockSession(ctx, tx, id); e != nil {
 		return login{}, e
@@ -138,7 +136,6 @@ nonce, verifier_cipher, return_path, expires_at
 	return l, nil
 }
 
-
 func (s *sqliteStore) installLogin(ctx context.Context, l login, p identity, cipher []byte) error {
 	proof, e := json.Marshal(storedProof{Identity: p, LoginGeneration: l.Generation})
 	if e != nil {
@@ -148,6 +145,7 @@ func (s *sqliteStore) installLogin(ctx context.Context, l login, p identity, cip
 	if e != nil {
 		return e
 	}
+	//nolint:contextcheck // Rollback uses a fresh one-second context so canceled requests cannot leak a transaction.
 	defer func() { _ = tx.Rollback() }()
 	if e = s.lockSession(ctx, tx, l.SessionID); e != nil {
 		return e
@@ -166,12 +164,12 @@ $4>clock_timestamp() AND $7>clock_timestamp()
 	return tx.Commit(ctx)
 }
 
-
 func (s *sqliteStore) claimRefresh(ctx context.Context, v session, owner string) (bool, error) {
 	tx, e := s.beginImmediate(ctx)
 	if e != nil {
 		return false, e
 	}
+	//nolint:contextcheck // Rollback uses a fresh one-second context so canceled requests cannot leak a transaction.
 	defer func() { _ = tx.Rollback() }()
 	if e = s.lockSession(ctx, tx, v.ID); e != nil {
 		return false, e
@@ -194,7 +192,6 @@ generation=$2 AND status='active' AND refresh_state='ready' AND absolute_until>c
 	return n == 1, nil
 }
 
-
 func (s *sqliteStore) installRefresh(ctx context.Context, v session, owner string, p identity, cipher []byte) error {
 	proof, e := json.Marshal(storedProof{Identity: p, LoginGeneration: v.LoginGeneration})
 	if e != nil {
@@ -204,6 +201,7 @@ func (s *sqliteStore) installRefresh(ctx context.Context, v session, owner strin
 	if e != nil {
 		return e
 	}
+	//nolint:contextcheck // Rollback uses a fresh one-second context so canceled requests cannot leak a transaction.
 	defer func() { _ = tx.Rollback() }()
 	if e = s.lockSession(ctx, tx, v.ID); e != nil {
 		return e
@@ -221,7 +219,6 @@ refresh_state='claimed' AND status='active' AND absolute_until>clock_timestamp()
 	return tx.Commit(ctx)
 }
 
-
 func (s *sqliteStore) uncertain(ctx context.Context, v session, owner string) error {
 	// No lease expiry may turn claimed/uncertain into ready with the old secret.
 	// #nosec G202 -- Table names are fixed; arguments are bound.
@@ -232,12 +229,12 @@ cookie_digest=$1 AND generation=$2 AND refresh_owner=$3 AND refresh_state='claim
 	return changed(result, e)
 }
 
-
 func (s *sqliteStore) end(ctx context.Context, id string, expected *int64) error {
 	tx, e := s.beginImmediate(ctx)
 	if e != nil {
 		return e
 	}
+	//nolint:contextcheck // Rollback uses a fresh one-second context so canceled requests cannot leak a transaction.
 	defer func() { _ = tx.Rollback() }()
 	var v session
 	// #nosec G202 -- Table names are fixed; arguments are bound.
@@ -264,7 +261,6 @@ refresh_cipher=NULL, refresh_state='none', refresh_owner='' WHERE cookie_digest=
 	return tx.Commit(ctx)
 }
 
-
 func (s *sqliteStore) endLocal(ctx context.Context, v session) error {
 	// #nosec G202 -- Table names are fixed; arguments are bound.
 	result, e := s.execContext(ctx, `
@@ -275,12 +271,12 @@ AND status=$3 AND status<>'active'
 	return changed(result, e)
 }
 
-
 func (s *sqliteStore) endBinding(ctx context.Context, b Binding) (session, error) {
 	tx, e := s.beginImmediate(ctx)
 	if e != nil {
 		return session{}, e
 	}
+	//nolint:contextcheck // Rollback uses a fresh one-second context so canceled requests cannot leak a transaction.
 	defer func() { _ = tx.Rollback() }()
 	// #nosec G202 -- Table names are fixed; arguments are bound.
 	v, e := loadSQLiteSession(tx.QueryRowContext(ctx, `

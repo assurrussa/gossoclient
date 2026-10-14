@@ -20,8 +20,9 @@ func TestStoreBoundaryRejectsInvalidBackends(t *testing.T) {
 }
 
 func TestStoreBoundarySnapshotsConcreteBackend(t *testing.T) {
+	const selectedSchema = "selected"
 	db := new(sql.DB) // Handle identity only; this test performs no database I/O.
-	postgres := &PostgresStore{store: &postgresStore{db: db, schema: "selected"}}
+	postgres := &PostgresStore{store: &postgresStore{db: db, schema: selectedSchema}}
 	first, ok := snapshotStore(postgres).(*postgresStore)
 	if !ok {
 		t.Fatal("PostgreSQL backend was not selected")
@@ -32,7 +33,7 @@ func TestStoreBoundarySnapshotsConcreteBackend(t *testing.T) {
 	}
 	postgres.store.db = nil
 	postgres.store.schema = "changed"
-	if first.db != db || second.db != db || first.schema != "selected" || second.schema != "selected" {
+	if first.db != db || second.db != db || first.schema != selectedSchema || second.schema != selectedSchema {
 		t.Fatal("PostgreSQL snapshot changed with constructor input")
 	}
 

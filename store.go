@@ -15,31 +15,33 @@ var errFenced = errors.New("session is no longer current")
 // finish a transition before starting issuer HTTP and must not replay an
 // exchange after an uncertain outcome.
 type sessionStorage interface {
-	ready(context.Context) error
-	create(context.Context, string, string, time.Time) error
-	load(context.Context, string) (session, error)
-	begin(context.Context, *login) error
-	claimLogin(context.Context, string, string) (login, error)
-	installLogin(context.Context, login, identity, []byte) error
-	claimRefresh(context.Context, session, string) (bool, error)
-	installRefresh(context.Context, session, string, identity, []byte) error
-	uncertain(context.Context, session, string) error
-	end(context.Context, string, *int64) error
-	endLocal(context.Context, session) error
-	endBinding(context.Context, Binding) (session, error)
+	ready(ctx context.Context) error
+	create(ctx context.Context, id, csrf string, until time.Time) error
+	load(ctx context.Context, id string) (session, error)
+	begin(ctx context.Context, l *login) error
+	claimLogin(ctx context.Context, state, id string) (login, error)
+	installLogin(ctx context.Context, l login, p identity, cipher []byte) error
+	claimRefresh(ctx context.Context, v session, owner string) (bool, error)
+	installRefresh(ctx context.Context, v session, owner string, p identity, cipher []byte) error
+	uncertain(ctx context.Context, v session, owner string) error
+	end(ctx context.Context, id string, expected *int64) error
+	endLocal(ctx context.Context, v session) error
+	endBinding(ctx context.Context, b Binding) (session, error)
 }
 
-var _ sessionStorage = (*postgresStore)(nil)
-var _ sessionStorage = (*sqliteStore)(nil)
+var (
+	_ sessionStorage = (*postgresStore)(nil)
+	_ sessionStorage = (*sqliteStore)(nil)
+)
 
 type session struct {
-		ID                          string
-		Generation, LoginGeneration int64
-		Status, CSRF                string
-		Proof                       *identity
-		FreshUntil, AbsoluteUntil   time.Time
-		Cipher                      []byte
-		RefreshState, Owner         string
+	ID                          string
+	Generation, LoginGeneration int64
+	Status, CSRF                string
+	Proof                       *identity
+	FreshUntil, AbsoluteUntil   time.Time
+	Cipher                      []byte
+	RefreshState, Owner         string
 }
 
 type login struct {

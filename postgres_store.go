@@ -13,7 +13,7 @@ import (
 var schema string
 
 type postgresStore struct {
-	db *sql.DB
+	db     *sql.DB
 	schema string
 }
 
@@ -91,7 +91,7 @@ func loadSession(row *sql.Row) (session, error) {
 
 func (s *postgresStore) lockSession(ctx context.Context, tx *sql.Tx, id string) error {
 	var locked string
-	// #nosec G202 -- The schema is validated and quoted; table names are fixed.
+	// #nosec G202 G701 -- Schema is validated and quoted; tables are fixed; values use bound parameters.
 	e := tx.QueryRowContext(ctx, `
 SELECT cookie_digest FROM `+s.table("sso_example_sessions")+` WHERE cookie_digest=$1 FOR UPDATE
 `, id).Scan(&locked)
@@ -149,7 +149,7 @@ func (s *postgresStore) claimLogin(ctx context.Context, state, id string) (login
 	// Lock both rows before evaluating either deadline. A rollback by a previous
 	// blocker does not guarantee re-evaluation of a SELECT/UPDATE time predicate.
 	var locked string
-	// #nosec G202 -- The schema is validated and quoted; table names are fixed.
+	// #nosec G202 G701 -- Schema is validated and quoted; tables are fixed; values use bound parameters.
 	e = tx.QueryRowContext(ctx, `
 SELECT state_digest FROM `+s.table("sso_example_logins")+` WHERE state_digest=$1 FOR UPDATE
 `, state).Scan(&locked)
@@ -160,7 +160,7 @@ SELECT state_digest FROM `+s.table("sso_example_logins")+` WHERE state_digest=$1
 		return login{}, e
 	}
 	var gen int64
-	// #nosec G202 -- The schema is validated and quoted; table names are fixed.
+	// #nosec G202 G701 -- Schema is validated and quoted; tables are fixed; values use bound parameters.
 	e = tx.QueryRowContext(ctx, `
 SELECT generation FROM `+s.table("sso_example_sessions")+` WHERE cookie_digest=$1 AND status='pending' AND
 absolute_until>clock_timestamp()
@@ -173,7 +173,7 @@ absolute_until>clock_timestamp()
 		return login{}, e
 	}
 	var l login
-	// #nosec G202 -- The schema is validated and quoted; table names are fixed.
+	// #nosec G202 G701 -- Schema is validated and quoted; tables are fixed; values use bound parameters.
 	e = tx.QueryRowContext(ctx, `
 UPDATE `+s.table("sso_example_logins")+` SET consumed=true WHERE state_digest=$1 AND cookie_digest=$2 AND generation=$3
 AND NOT consumed AND expires_at>clock_timestamp() RETURNING state_digest, cookie_digest, generation,
@@ -211,7 +211,7 @@ func (s *postgresStore) installLogin(ctx context.Context, l login, p identity, c
 	if e = s.lockSession(ctx, tx, l.SessionID); e != nil {
 		return e
 	}
-	// #nosec G202 -- The schema is validated and quoted; table names are fixed.
+	// #nosec G202 G701 -- Schema is validated and quoted; tables are fixed; values use bound parameters.
 	result, e := tx.ExecContext(ctx, `
 UPDATE `+s.table("sso_example_sessions")+` SET status='active', proof=$3, fresh_until=$4,
 absolute_until=LEAST(absolute_until, $5), refresh_cipher=$6, refresh_state='ready', refresh_owner=''
@@ -323,7 +323,7 @@ refresh_cipher=NULL, refresh_state='none', refresh_owner='' WHERE cookie_digest=
 // endLocal ends only the original non-active browser state. Callback installs
 // active state at the pending generation, so generation alone cannot fence it.
 func (s *postgresStore) endLocal(ctx context.Context, v session) error {
-	// #nosec G202 -- The schema is validated and quoted; table names are fixed.
+	// #nosec G202 G701 -- Schema is validated and quoted; tables are fixed; values use bound parameters.
 	result, e := s.db.ExecContext(ctx, `
 UPDATE `+s.table("sso_example_sessions")+` SET generation=generation+1, status='ended', proof=NULL, fresh_until=NULL,
 refresh_cipher=NULL, refresh_state='none', refresh_owner='' WHERE cookie_digest=$1 AND generation=$2
@@ -364,4 +364,3 @@ refresh_cipher=NULL, refresh_state='none', refresh_owner='' WHERE cookie_digest=
 	}
 	return v, nil
 }
-

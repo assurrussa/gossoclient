@@ -27,8 +27,10 @@ func (s *SQLiteStore) sessionStore() sessionStorage {
 	return &v
 }
 
-var _ Store = (*PostgresStore)(nil)
-var _ Store = (*SQLiteStore)(nil)
+var (
+	_ Store = (*PostgresStore)(nil)
+	_ Store = (*SQLiteStore)(nil)
+)
 
 // Select and snapshot the concrete driver only at the public boundary.
 // Accept only package-owned concrete wrappers: embedding Store in an external
