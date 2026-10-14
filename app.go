@@ -28,7 +28,7 @@ var (
 type app struct {
 	config config
 	oidc   *oidcClient
-	store  *store
+	store  sessionStorage
 	aead   cipher.AEAD
 	now    func() time.Time
 	slots  chan struct{}

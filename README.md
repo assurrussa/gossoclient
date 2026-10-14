@@ -340,3 +340,33 @@ Do not interrupt successful login or infer factor enrollment from amr/profile.
 ## License
 
 [MIT](LICENSE). Dependencies retain their respective licenses.
+
+## SQLite storage
+
+SQLite is an alternative durable backend with the same generation, login-lineage,
+one-use callback, refresh-uncertainty and logout fences. The application imports
+its SQLite driver, opens its own database, applies SQLiteSchema() explicitly, and
+passes NewSQLiteStore(ctx, db) to WithStore (or Options.Store). PostgreSQL callers
+and Schema() retain their existing behavior.
+
+Use SQLite 3.35 or newer. The adapter never changes PRAGMA settings, user_version,
+connection limits or database lifetime. Configure durability, foreign keys and
+busy timeout on every connection according to your application's requirements.
+Use a file-backed database for persistence; a plain :memory: DSN creates separate
+databases per connection. The tables use exact INTEGER Unix nanoseconds, and
+stored deadlines must fit that representation (approximately years 1678–2262).
+There is no automatic PostgreSQL-to-SQLite migration.
+
+Write transitions acquire BEGIN IMMEDIATE before reading deadlines and use one
+borrowed connection, including with MaxOpenConns(1). The transaction ends before
+issuer HTTP begins. A claimed or uncertain refresh is never automatically
+returned to ready. Applications must not modify the store tables themselves.
+
+The shared conformance suite runs against modernc.org/sqlite (one-connection and
+pooled configurations) and PostgreSQL. PostgreSQL cases still require
+SSO_TEST_DATABASE; a run with those cases skipped is not full conformance.
+
+Internally, application session logic calls a private transition interface.
+PostgreSQL and SQLite implement it directly; driver selection and immutable
+handle snapshots happen at construction. Backend SQL, row/write locks and
+ambiguous-transaction cleanup remain inside each adapter.

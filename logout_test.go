@@ -67,13 +67,13 @@ func TestHTTPLogoutUnconfirmedRevocation(t *testing.T) {
 		t.Run(failure, func(t *testing.T) {
 			a, authority, _ := testApp(t)
 			cookie, v := signedIn(t, a, authority)
-			transport := &revokeTransport{next: a.oidc.http.Transport, store: a.store}
+			transport := &revokeTransport{next: a.oidc.http.Transport, store: testPostgresBackend(t, a)}
 			if failure == "remote-503" {
 				transport.status = http.StatusServiceUnavailable
 			}
 			a.oidc.http.Transport = transport
 			if failure == "decrypt" {
-				if _, e := a.store.db.ExecContext(t.Context(), `UPDATE sso_example_sessions SET refresh_cipher=$1 WHERE cookie_digest=$2`, []byte("invalid-cipher"), v.ID); e != nil {
+				if _, e := testPostgresBackend(t, a).db.ExecContext(t.Context(), `UPDATE sso_example_sessions SET refresh_cipher=$1 WHERE cookie_digest=$2`, []byte("invalid-cipher"), v.ID); e != nil {
 					t.Fatal(e)
 				}
 			}

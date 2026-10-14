@@ -1,5 +1,5 @@
 // Package browser implements AuthHub relying-party browser sessions using the
-// reviewed OIDC libraries and durable PostgreSQL generation fences. It supplies
+// reviewed OIDC libraries and durable generation fences. It supplies
 // identity proofs, never local user linking or application permissions.
 package browser
 
@@ -81,7 +81,7 @@ func ValidateIssuerEndpoint(issuer, endpoint string) error {
 // PostgresStore owns no connection pool. The caller owns db and must apply
 // Schema in an application-owned schema before construction. There are no
 // authority/internal imports and no automatic migrations.
-type PostgresStore struct{ store *store }
+type PostgresStore struct{ store *postgresStore }
 
 // Schema returns the reviewed RP schema. Existing table names are retained for
 // compatibility; isolate each application's rows using its PostgreSQL schema.
@@ -107,7 +107,7 @@ func newPostgresStore(ctx context.Context, db *sql.DB, schemaName string) (*Post
 	if db == nil {
 		return nil, errors.New("session database required")
 	}
-	s := &store{db: db, schema: schemaName}
+	s := &postgresStore{db: db, schema: schemaName}
 	if e := s.ready(ctx); e != nil {
 		return nil, e
 	}
@@ -118,7 +118,7 @@ func newPostgresStore(ctx context.Context, db *sql.DB, schemaName string) (*Post
 // Store is mandatory: there is no in-memory fallback. No customizable token
 // transport or clock is exposed in the consumer API.
 type Options struct {
-	Store        *PostgresStore
+	Store        Store
 	ClientSecret string
 	StorageKey   []byte
 }
@@ -145,7 +145,7 @@ func newClient(ctx context.Context, c config, o Options) (*Client, error) {
 	}
 	// The database remains caller-owned. Snapshot our wrapper so neither the
 	// option object nor constructor inputs can replace the selected handle.
-	selectedStore := *o.Store.store
+	selectedStore := snapshotStore(o.Store)
 	aead, e := newAEAD(o.StorageKey)
 	if e != nil {
 		return nil, e
@@ -155,7 +155,7 @@ func newClient(ctx context.Context, c config, o Options) (*Client, error) {
 		return nil, e
 	}
 	return &Client{app: &app{
-		config: oidc.config, oidc: oidc, store: &selectedStore, aead: aead,
+		config: oidc.config, oidc: oidc, store: selectedStore, aead: aead,
 		now: time.Now, slots: make(chan struct{}, 32),
 	}}, nil
 }
