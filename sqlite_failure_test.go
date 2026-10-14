@@ -81,7 +81,7 @@ func TestSQLiteAmbiguousTransactionOutcomes(t *testing.T) {
 			if _, err = db.ExecContext(ctx, SQLiteSchema()); err != nil { t.Fatal(err) }
 			s, err := NewSQLiteStore(ctx, db)
 			if err != nil { t.Fatal(err) }
-			tx, err := s.store.sqlite.beginImmediate(ctx)
+			tx, err := s.store.beginImmediate(ctx)
 			switch mode {
 			case "begin":
 				if !errors.Is(err, errInjectedSQLite) || tx != nil { t.Fatal("ambiguous BEGIN accepted", err) }

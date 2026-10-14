@@ -4,11 +4,11 @@ package browser
 // method deliberately prevents custom implementations from bypassing the
 // session transition protocol. The application owns the database lifetime.
 type Store interface {
-	sessionStore() *store
+	sessionStore() sessionStorage
 }
 
-func (s *PostgresStore) sessionStore() *store {
-	if s == nil || s.store == nil {
+func (s *PostgresStore) sessionStore() sessionStorage {
+	if s == nil || s.store == nil || s.store.db == nil {
 		return nil
 	}
 	v := *s.store
@@ -17,26 +17,23 @@ func (s *PostgresStore) sessionStore() *store {
 
 // SQLiteStore borrows an application-owned SQLite database. It never opens,
 // closes, migrates or changes PRAGMA settings on that database.
-type SQLiteStore struct { store *store }
+type SQLiteStore struct{ store *sqliteStore }
 
-func (s *SQLiteStore) sessionStore() *store {
-	if s == nil || s.store == nil {
+func (s *SQLiteStore) sessionStore() sessionStorage {
+	if s == nil || s.store == nil || s.store.db == nil {
 		return nil
 	}
 	v := *s.store
-	if v.sqlite != nil {
-		sqlite := *v.sqlite
-		v.sqlite = &sqlite
-	}
 	return &v
 }
 
 var _ Store = (*PostgresStore)(nil)
 var _ Store = (*SQLiteStore)(nil)
 
-// Accept only package-owned concrete wrappers. Embedding Store in an external
+// Select and snapshot the concrete driver only at the public boundary.
+// Accept only package-owned concrete wrappers: embedding Store in an external
 // type must not introduce a custom transition implementation or a nil panic.
-func snapshotStore(s Store) *store {
+func snapshotStore(s Store) sessionStorage {
 	switch v := s.(type) {
 	case *PostgresStore:
 		return v.sessionStore()
@@ -48,6 +45,5 @@ func snapshotStore(s Store) *store {
 }
 
 func validStore(s Store) bool {
-	v := snapshotStore(s)
-	return v != nil && v.db != nil
+	return snapshotStore(s) != nil
 }

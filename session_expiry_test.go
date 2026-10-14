@@ -104,7 +104,7 @@ func legacyExpirySession(t *testing.T, a *app, v session, end time.Time) session
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err = a.store.db.ExecContext(t.Context(),
+	if _, err = testPostgresBackend(t, a).db.ExecContext(t.Context(),
 		"UPDATE sso_example_sessions SET proof=$2, absolute_until=$3 WHERE cookie_digest=$1",
 		v.ID, proof, end); err != nil {
 		t.Fatal(err)
@@ -242,7 +242,7 @@ func TestPostgresSignedExpiryAndLocalCapStopRefresh(t *testing.T) {
 			end := p.sessionEnd
 			if localFirst {
 				end = p.now.Add(30 * time.Minute)
-				if _, err := a.store.db.ExecContext(t.Context(),
+				if _, err := testPostgresBackend(t, a).db.ExecContext(t.Context(),
 					"UPDATE sso_example_sessions SET absolute_until=$2 WHERE cookie_digest=$1", v.ID, end); err != nil {
 					t.Fatal(err)
 				}
@@ -292,7 +292,7 @@ func TestPostgresSignedExpiryInstallRechecksAfterLockWait(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	err = afterRolledBackBlocker(t, a.store, v.ID, end, func() error {
+	err = afterRolledBackBlocker(t, testPostgresBackend(t, a), v.ID, end, func() error {
 		return a.store.installRefresh(t.Context(), v, "expiry-owner", next, cipher)
 	})
 	if !errors.Is(err, errFenced) {

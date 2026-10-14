@@ -17,7 +17,7 @@ func validateStoreSchema(name string) error {
 
 // table is used only with fixed SQL table names, never user-provided values.
 // The optional schema was validated before construction and is always quoted.
-func (s *store) table(name string) string {
+func (s *postgresStore) table(name string) string {
 	if s.schema == "" {
 		return name
 	}

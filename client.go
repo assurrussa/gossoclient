@@ -81,7 +81,7 @@ func ValidateIssuerEndpoint(issuer, endpoint string) error {
 // PostgresStore owns no connection pool. The caller owns db and must apply
 // Schema in an application-owned schema before construction. There are no
 // authority/internal imports and no automatic migrations.
-type PostgresStore struct{ store *store }
+type PostgresStore struct{ store *postgresStore }
 
 // Schema returns the reviewed RP schema. Existing table names are retained for
 // compatibility; isolate each application's rows using its PostgreSQL schema.
@@ -107,7 +107,7 @@ func newPostgresStore(ctx context.Context, db *sql.DB, schemaName string) (*Post
 	if db == nil {
 		return nil, errors.New("session database required")
 	}
-	s := &store{db: db, schema: schemaName}
+	s := &postgresStore{db: db, schema: schemaName}
 	if e := s.ready(ctx); e != nil {
 		return nil, e
 	}

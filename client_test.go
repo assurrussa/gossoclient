@@ -110,7 +110,7 @@ func TestPublicProofPendingOwnerAndStorageFailures(t *testing.T) {
 	if _, e = c.Verify(requestForProof(t, a, cookie)); !errors.Is(e, ErrUnavailable) {
 		t.Fatal("pending owner error class")
 	}
-	if e = a.store.db.Close(); e != nil {
+	if e = testPostgresBackend(t, a).db.Close(); e != nil {
 		t.Fatal(e)
 	}
 	if _, e = c.Check(t.Context(), proof.Binding()); !errors.Is(e, ErrUnavailable) {

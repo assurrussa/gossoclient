@@ -41,7 +41,7 @@ func TestBindingLifecycleRotationRestartAndExpiredLogout(t *testing.T) {
 	if current.Generation <= old.Generation || current.LoginGeneration != old.LoginGeneration {
 		t.Fatal("refresh changed admission lineage or failed rotation")
 	}
-	if e = a.store.db.Close(); e != nil {
+	if e = testPostgresBackend(t, a).db.Close(); e != nil {
 		t.Fatal(e)
 	}
 	a.store = reopen()
@@ -135,7 +135,7 @@ func TestBindingLifecycleOldLoginCannotRevokeNewLogin(t *testing.T) {
 
 type revokeTransport struct {
 	next      http.RoundTripper
-	store     *store
+	store     *postgresStore
 	calls     atomic.Int64
 	confirmed atomic.Bool
 	status    int
@@ -166,7 +166,7 @@ func TestBindingLifecycleRemoteUnknownAndLegacy(t *testing.T) {
 	_, v := signedIn(t, a, authority)
 	c := &Client{app: a}
 	binding := a.proof(v).Binding()
-	transport := &revokeTransport{next: a.oidc.http.Transport, store: a.store}
+	transport := &revokeTransport{next: a.oidc.http.Transport, store: testPostgresBackend(t, a)}
 	a.oidc.http.Transport = transport
 	if e := c.RevokeBinding(t.Context(), binding); !errors.Is(e, ErrRevocationUnconfirmed) {
 		t.Fatal("remote unknown masked", e)
@@ -179,7 +179,7 @@ func TestBindingLifecycleRemoteUnknownAndLegacy(t *testing.T) {
 	}
 	_, v = signedIn(t, a, authority)
 	binding = a.proof(v).Binding()
-	if _, e := a.store.db.ExecContext(t.Context(), `UPDATE sso_example_sessions SET proof=proof-'loginGeneration' WHERE cookie_digest=$1`, v.ID); e != nil {
+	if _, e := testPostgresBackend(t, a).db.ExecContext(t.Context(), `UPDATE sso_example_sessions SET proof=proof-'loginGeneration' WHERE cookie_digest=$1`, v.ID); e != nil {
 		t.Fatal(e)
 	}
 	if _, e := c.Check(t.Context(), binding); !errors.Is(e, ErrDenied) {
@@ -242,7 +242,7 @@ func TestBindingLifecycleUnknownCommit(t *testing.T) {
 	_, v := signedIn(t, a, authority)
 	b := a.proof(v).Binding()
 	var searchPath string
-	if e := a.store.db.QueryRowContext(t.Context(), `SHOW search_path`).Scan(&searchPath); e != nil {
+	if e := testPostgresBackend(t, a).db.QueryRowContext(t.Context(), `SHOW search_path`).Scan(&searchPath); e != nil {
 		t.Fatal(e)
 	}
 	cfg, e := pgx.ParseConfig(os.Getenv("SSO_TEST_DATABASE"))
@@ -253,7 +253,7 @@ func TestBindingLifecycleUnknownCommit(t *testing.T) {
 	lost := &atomic.Bool{}
 	db := sql.OpenDB(commitLossConnector{Connector: stdlib.GetConnector(*cfg), lost: lost})
 	t.Cleanup(func() { _ = db.Close() })
-	a.store = &store{db: db}
+	a.store = &postgresStore{db: db}
 	c := &Client{app: a}
 	before := authority.requests.Load()
 	lost.Store(true)

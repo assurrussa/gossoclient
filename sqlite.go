@@ -28,7 +28,7 @@ func NewSQLiteStore(ctx context.Context, db *sql.DB) (*SQLiteStore, error) {
 	if db == nil { return nil, errors.New("session database required") }
 	backend := &sqliteStore{db: db}
 	if err := backend.ready(ctx); err != nil { return nil, err }
-	return &SQLiteStore{store: &store{db: db, sqlite: backend}}, nil
+	return &SQLiteStore{store: backend}, nil
 }
 
 type sqliteStore struct { db *sql.DB }

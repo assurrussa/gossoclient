@@ -97,7 +97,7 @@ func TestHostLogoutNeverRefreshesExpiredProof(t *testing.T) {
 func TestHostLogoutStorageFailurePreservesCookie(t *testing.T) {
 	a, authority, _ := testApp(t)
 	cookie, _ := signedIn(t, a, authority)
-	if err := a.store.db.Close(); err != nil {
+	if err := testPostgresBackend(t, a).db.Close(); err != nil {
 		t.Fatal(err)
 	}
 	w := httptest.NewRecorder()
@@ -134,7 +134,7 @@ func TestHostLogoutPendingAndUnknownRowsAreLocalOnly(t *testing.T) {
 func TestHostLogoutRemoteFailureRemainsLocalOnly(t *testing.T) {
 	a, authority, _ := testApp(t)
 	cookie, _ := signedIn(t, a, authority)
-	transport := &revokeTransport{next: a.oidc.http.Transport, store: a.store, status: http.StatusServiceUnavailable}
+	transport := &revokeTransport{next: a.oidc.http.Transport, store: testPostgresBackend(t, a), status: http.StatusServiceUnavailable}
 	a.oidc.http.Transport = transport
 	w := httptest.NewRecorder()
 	(&Client{app: a}).LogoutFromHost(w, hostLogoutRequest(t, a, cookie))

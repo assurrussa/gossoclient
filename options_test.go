@@ -16,7 +16,7 @@ import (
 func optionTestStore() *PostgresStore {
 	// Constructor tests never query this handle. Only this same-package fixture
 	// can fabricate the private wrapper; production uses NewPostgresStore.
-	return &PostgresStore{store: &store{db: new(sql.DB)}}
+	return &PostgresStore{store: &postgresStore{db: new(sql.DB)}}
 }
 
 func validTestOptions() []Option {
@@ -103,7 +103,7 @@ func TestOptionsRejectMalformedInputs(t *testing.T) {
 		{"wrong callback", 4, WithCallback("https://app.test/other")},
 		{"typed nil store", 5, WithStore(absent)},
 		{"zero store", 5, WithStore(&PostgresStore{})},
-		{"nil database", 5, WithStore(&PostgresStore{store: &store{}})},
+		{"nil database", 5, WithStore(&PostgresStore{store: &postgresStore{}})},
 		{"empty secret", 6, WithClientSecret("")},
 		{"oversize secret", 6, WithClientSecret(strings.Repeat("s", 4097))},
 		{"short key", 7, WithStorageKey(make([]byte, 31))},
@@ -168,7 +168,7 @@ func TestNewWithOptionsFreezesInputsAndUsesDiscovery(t *testing.T) {
 	}
 	key[0] = 'x'
 	sharedStore.store.db = nil
-	if client.app.store.db != db {
+	if testPostgresBackend(t, client.app).db != db {
 		t.Fatal("constructed client retained mutable store wrapper")
 	}
 	if client.app.config.RevocationEndpoint != authority.server.URL+"/oauth2/revoke" ||

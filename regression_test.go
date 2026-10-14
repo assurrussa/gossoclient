@@ -19,7 +19,7 @@ import (
 
 // The blocker rolls back without changing the row. This specifically exercises
 // PostgreSQL's pre-lock predicate evaluation, not an ordinary changed-row CAS.
-func afterRolledBackBlocker(t *testing.T, s *store, id string, deadline time.Time, work func() error) error {
+func afterRolledBackBlocker(t *testing.T, s *postgresStore, id string, deadline time.Time, work func() error) error {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -66,7 +66,7 @@ func TestPostgresLoginInstallRechecksAfterUnchangedLockWait(t *testing.T) {
 	a, p, _ := testApp(t)
 	cookie, state := startLogin(t, a, p)
 	var expiry time.Time
-	if e := a.store.db.QueryRowContext(context.Background(), `UPDATE sso_example_logins SET expires_at=clock_timestamp()+interval '400 milliseconds' WHERE state_digest=$1 RETURNING expires_at`, digest(state)).Scan(&expiry); e != nil {
+	if e := testPostgresBackend(t, a).db.QueryRowContext(context.Background(), `UPDATE sso_example_logins SET expires_at=clock_timestamp()+interval '400 milliseconds' WHERE state_digest=$1 RETURNING expires_at`, digest(state)).Scan(&expiry); e != nil {
 		t.Fatal(e)
 	}
 	l, e := a.store.claimLogin(context.Background(), digest(state), digest(cookie.Value))
@@ -83,7 +83,7 @@ func TestPostgresLoginInstallRechecksAfterUnchangedLockWait(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
-	e = afterRolledBackBlocker(t, a.store, v.ID, expiry, func() error { return a.store.installLogin(context.Background(), l, proof, encrypted) })
+	e = afterRolledBackBlocker(t, testPostgresBackend(t, a), v.ID, expiry, func() error { return a.store.installLogin(context.Background(), l, proof, encrypted) })
 	if !errors.Is(e, errFenced) {
 		t.Fatal("expired login installed after unchanged-row wait", e)
 	}
@@ -101,7 +101,7 @@ func TestPostgresRefreshInstallRechecksAbsoluteEndAfterLockWait(t *testing.T) {
 		t.Fatal(e)
 	}
 	var expiry time.Time
-	if e = a.store.db.QueryRowContext(context.Background(), `UPDATE sso_example_sessions SET absolute_until=clock_timestamp()+interval '400 milliseconds' WHERE cookie_digest=$1 RETURNING absolute_until`, v.ID).Scan(&expiry); e != nil {
+	if e = testPostgresBackend(t, a).db.QueryRowContext(context.Background(), `UPDATE sso_example_sessions SET absolute_until=clock_timestamp()+interval '400 milliseconds' WHERE cookie_digest=$1 RETURNING absolute_until`, v.ID).Scan(&expiry); e != nil {
 		t.Fatal(e)
 	}
 	next := v
@@ -110,7 +110,7 @@ func TestPostgresRefreshInstallRechecksAbsoluteEndAfterLockWait(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
-	e = afterRolledBackBlocker(t, a.store, v.ID, expiry, func() error { return a.store.installRefresh(context.Background(), v, "owner", *v.Proof, encrypted) })
+	e = afterRolledBackBlocker(t, testPostgresBackend(t, a), v.ID, expiry, func() error { return a.store.installRefresh(context.Background(), v, "owner", *v.Proof, encrypted) })
 	if !errors.Is(e, errFenced) {
 		t.Fatal("refresh installed after absolute end across unchanged-row wait", e)
 	}
@@ -124,10 +124,10 @@ func TestPostgresClaimRechecksDeadlineAfterLockWait(t *testing.T) {
 	a, p, _ := testApp(t)
 	_, v := signedIn(t, a, p)
 	var expiry time.Time
-	if e := a.store.db.QueryRowContext(context.Background(), `UPDATE sso_example_sessions SET absolute_until=clock_timestamp()+interval '400 milliseconds' WHERE cookie_digest=$1 RETURNING absolute_until`, v.ID).Scan(&expiry); e != nil {
+	if e := testPostgresBackend(t, a).db.QueryRowContext(context.Background(), `UPDATE sso_example_sessions SET absolute_until=clock_timestamp()+interval '400 milliseconds' WHERE cookie_digest=$1 RETURNING absolute_until`, v.ID).Scan(&expiry); e != nil {
 		t.Fatal(e)
 	}
-	e := afterRolledBackBlocker(t, a.store, v.ID, expiry, func() error {
+	e := afterRolledBackBlocker(t, testPostgresBackend(t, a), v.ID, expiry, func() error {
 		won, e := a.store.claimRefresh(context.Background(), v, "owner")
 		if e != nil {
 			return e
@@ -198,7 +198,7 @@ func TestPostgresUnconfirmedDenialCannotRegainCachedAuthorization(t *testing.T) 
 			a, p, reopen := testApp(t)
 			cookie, v := signedIn(t, a, p)
 			v = dueSession(t, a, v)
-			rejectTerminalWrites(t, a.store.db)
+			rejectTerminalWrites(t, testPostgresBackend(t, a).db)
 			if kind == "denial" {
 				p.mode = "deny"
 			} else {
@@ -315,7 +315,7 @@ func TestPostgresCallbackAcknowledgementUsesCommittedProofDeadlines(t *testing.T
 			a, p, _ := testApp(t)
 			cookie, state := startLogin(t, a, p)
 			var loginExpiry time.Time
-			if e := a.store.db.QueryRowContext(context.Background(), `UPDATE sso_example_logins SET expires_at=clock_timestamp()+interval '5 seconds' WHERE state_digest=$1 RETURNING expires_at`, digest(state)).Scan(&loginExpiry); e != nil {
+			if e := testPostgresBackend(t, a).db.QueryRowContext(context.Background(), `UPDATE sso_example_logins SET expires_at=clock_timestamp()+interval '5 seconds' WHERE state_digest=$1 RETURNING expires_at`, digest(state)).Scan(&loginExpiry); e != nil {
 				t.Fatal(e)
 			}
 			ackTime := loginExpiry.Add(time.Second)
@@ -326,7 +326,7 @@ func TestPostgresCallbackAcknowledgementUsesCommittedProofDeadlines(t *testing.T
 			}
 			if kind == "absolute-end" {
 				var end time.Time
-				if e := a.store.db.QueryRowContext(context.Background(), `UPDATE sso_example_sessions SET absolute_until=clock_timestamp()+interval '10 seconds' WHERE cookie_digest=$1 RETURNING absolute_until`, digest(cookie.Value)).Scan(&end); e != nil {
+				if e := testPostgresBackend(t, a).db.QueryRowContext(context.Background(), `UPDATE sso_example_sessions SET absolute_until=clock_timestamp()+interval '10 seconds' WHERE cookie_digest=$1 RETURNING absolute_until`, digest(cookie.Value)).Scan(&end); e != nil {
 					t.Fatal(e)
 				}
 				ackTime = end

@@ -18,7 +18,7 @@ import (
 	"github.com/jackc/pgx/v5/stdlib"
 )
 
-func testStore(t *testing.T) (*store, func() *store) {
+func testStore(t *testing.T) (*postgresStore, func() *postgresStore) {
 	t.Helper()
 	dsn := os.Getenv("SSO_TEST_DATABASE")
 	if dsn == "" {
@@ -39,13 +39,13 @@ func testStore(t *testing.T) (*store, func() *store) {
 		t.Fatal(e)
 	}
 	t.Cleanup(func() { _, _ = base.ExecContext(context.Background(), `DROP SCHEMA `+name+` CASCADE`) })
-	open := func() *store {
+	open := func() *postgresStore {
 		c := cfg.Copy()
 		c.RuntimeParams["search_path"] = name
 		db := stdlib.OpenDB(*c)
 		db.SetMaxOpenConns(8)
 		t.Cleanup(func() { _ = db.Close() })
-		return &store{db: db}
+		return &postgresStore{db: db}
 	}
 	s := open()
 	if _, e = s.db.ExecContext(context.Background(), schema); e != nil {
@@ -57,7 +57,7 @@ func testStore(t *testing.T) (*store, func() *store) {
 	return s, open
 }
 
-func testApp(t *testing.T) (*app, *authority, func() *store) {
+func testApp(t *testing.T) (*app, *authority, func() *postgresStore) {
 	t.Helper()
 	s, reopen := testStore(t)
 	p := newAuthority(t)
@@ -143,7 +143,7 @@ func dueSession(t *testing.T, a *app, v session) session {
 	t.Helper()
 	v.FreshUntil = time.Now().Add(15 * time.Second)
 	v.Proof.FreshUntil = v.FreshUntil
-	if _, e := a.store.db.ExecContext(context.Background(), `UPDATE sso_example_sessions SET fresh_until=$2 WHERE cookie_digest=$1`, v.ID, v.FreshUntil); e != nil {
+	if _, e := testPostgresBackend(t, a).db.ExecContext(context.Background(), `UPDATE sso_example_sessions SET fresh_until=$2 WHERE cookie_digest=$1`, v.ID, v.FreshUntil); e != nil {
 		t.Fatal(e)
 	}
 	return v
@@ -158,7 +158,7 @@ func TestPostgresLoginRestartOneUseAndStateBinding(t *testing.T) {
 	if w := callback(a, &http.Cookie{Name: cookieName, Value: strings.Repeat("x", 43), Secure: true, HttpOnly: true, SameSite: http.SameSiteLaxMode}, state); w.Code != http.StatusBadRequest {
 		t.Fatal("wrong browser accepted")
 	}
-	if e := a.store.db.Close(); e != nil {
+	if e := testPostgresBackend(t, a).db.Close(); e != nil {
 		t.Fatal(e)
 	}
 	a.store = reopen()
@@ -185,7 +185,7 @@ func TestPostgresCallbackNoncePKCEAndPurpose(t *testing.T) {
 				if e != nil {
 					t.Fatal(e)
 				}
-				if _, e = a.store.db.ExecContext(context.Background(), `UPDATE sso_example_logins SET verifier_cipher=$1`, encrypted); e != nil {
+				if _, e = testPostgresBackend(t, a).db.ExecContext(context.Background(), `UPDATE sso_example_logins SET verifier_cipher=$1`, encrypted); e != nil {
 					t.Fatal(e)
 				}
 			default:
@@ -353,7 +353,7 @@ func TestPostgresCrashAfterRefreshClaimCannotRetry(t *testing.T) {
 	if e != nil || !won {
 		t.Fatal(e)
 	}
-	_ = a.store.db.Close()
+	_ = testPostgresBackend(t, a).db.Close()
 	a.store = reopen()
 	current, e := a.store.load(context.Background(), v.ID)
 	if e != nil {
@@ -428,7 +428,7 @@ func TestPostgresIdleSessionCanObtainNewCentralProof(t *testing.T) {
 	_, v := signedIn(t, a, p)
 	v.FreshUntil = time.Now().Add(-time.Second)
 	v.Proof.FreshUntil = v.FreshUntil
-	if _, e := a.store.db.ExecContext(context.Background(), `UPDATE sso_example_sessions SET fresh_until=$2 WHERE cookie_digest=$1`, v.ID, v.FreshUntil); e != nil {
+	if _, e := testPostgresBackend(t, a).db.ExecContext(context.Background(), `UPDATE sso_example_sessions SET fresh_until=$2 WHERE cookie_digest=$1`, v.ID, v.FreshUntil); e != nil {
 		t.Fatal(e)
 	}
 	p.claims = func(m map[string]any) {
@@ -511,7 +511,7 @@ func awaitToken(t *testing.T, arrived <-chan struct{}) {
 func TestPostgresDatabaseOutageFailsClosed(t *testing.T) {
 	a, p, reopen := testApp(t)
 	cookie, v := signedIn(t, a, p)
-	if e := a.store.db.Close(); e != nil {
+	if e := testPostgresBackend(t, a).db.Close(); e != nil {
 		t.Fatal(e)
 	}
 	w := request(a, http.MethodGet, "/", cookie, nil)
@@ -528,4 +528,15 @@ func TestPostgresDatabaseOutageFailsClosed(t *testing.T) {
 	if w = request(a, http.MethodGet, "/", cookie, nil); w.Code != http.StatusOK {
 		t.Fatal("restored durable proof unavailable")
 	}
+}
+
+// testPostgresBackend confines PostgreSQL fixture SQL to PostgreSQL tests.
+// Production application code depends only on sessionStorage.
+func testPostgresBackend(t *testing.T, a *app) *postgresStore {
+	t.Helper()
+	s, ok := a.store.(*postgresStore)
+	if !ok {
+		t.Fatal("PostgreSQL fixture required")
+	}
+	return s
 }

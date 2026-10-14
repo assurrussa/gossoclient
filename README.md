@@ -365,3 +365,8 @@ returned to ready. Applications must not modify the store tables themselves.
 The shared conformance suite runs against modernc.org/sqlite (one-connection and
 pooled configurations) and PostgreSQL. PostgreSQL cases still require
 SSO_TEST_DATABASE; a run with those cases skipped is not full conformance.
+
+Internally, application session logic calls a private transition interface.
+PostgreSQL and SQLite implement it directly; driver selection and immutable
+handle snapshots happen at construction. Backend SQL, row/write locks and
+ambiguous-transaction cleanup remain inside each adapter.

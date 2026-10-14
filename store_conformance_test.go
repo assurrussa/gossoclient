@@ -15,24 +15,31 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-func testSQLiteStore(t *testing.T, maxOpen int) (*store, func() *store) {
+// The conformance fixture owns its test pool separately from the behavioral
+// contract. Database handles are not part of production sessionStorage.
+type conformanceStore struct {
+	sessionStorage
+	db *sql.DB
+}
+
+func testSQLiteStore(t *testing.T, maxOpen int) (*sqliteStore, func() *sqliteStore) {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "sessions.sqlite")
-	open := func() *store {
+	open := func() *sqliteStore {
 		db, err := sql.Open("sqlite", path+"?_pragma=busy_timeout(5000)")
 		if err != nil { t.Fatal(err) }
 		db.SetMaxOpenConns(maxOpen)
 		t.Cleanup(func() { _ = db.Close() })
-		return &store{db: db, sqlite: &sqliteStore{db: db}}
+		return &sqliteStore{db: db}
 	}
 	s := open()
 	if _, err := s.db.ExecContext(t.Context(), SQLiteSchema()); err != nil { t.Fatal(err) }
 	selected, err := NewSQLiteStore(t.Context(), s.db)
 	if err != nil { t.Fatal(err) }
-	return selected.sessionStore(), open
+	return selected.store, open
 }
 
-func conformanceApp(t *testing.T, s *store) (*app, *authority) {
+func conformanceApp(t *testing.T, s sessionStorage) (*app, *authority) {
 	t.Helper()
 	p := newAuthority(t)
 	client := p.client(t, time.Now)
@@ -45,11 +52,22 @@ func conformanceApp(t *testing.T, s *store) (*app, *authority) {
 func TestStoreConformance(t *testing.T) {
 	for _, backend := range []string{"postgres", "sqlite-one-connection", "sqlite-pool"} {
 		t.Run(backend, func(t *testing.T) {
-			newStore := func(t *testing.T) (*store, func() *store) {
+			newStore := func(t *testing.T) (conformanceStore, func() conformanceStore) {
 				t.Helper()
-				if backend == "postgres" { return testStore(t) }
-				if backend == "sqlite-one-connection" { return testSQLiteStore(t, 1) }
-				return testSQLiteStore(t, 8)
+				if backend == "postgres" {
+					s, reopen := testStore(t)
+					return conformanceStore{sessionStorage: s, db: s.db}, func() conformanceStore {
+						next := reopen()
+						return conformanceStore{sessionStorage: next, db: next.db}
+					}
+				}
+				maxOpen := 8
+				if backend == "sqlite-one-connection" { maxOpen = 1 }
+				s, reopen := testSQLiteStore(t, maxOpen)
+				return conformanceStore{sessionStorage: s, db: s.db}, func() conformanceStore {
+					next := reopen()
+					return conformanceStore{sessionStorage: next, db: next.db}
+				}
 			}
 			t.Run("login-restart-one-use", func(t *testing.T) {
 				s, reopen := newStore(t)
@@ -139,7 +157,7 @@ func TestSQLiteWaitThenExpire(t *testing.T) {
 	s, _ := testSQLiteStore(t, 2)
 	until := time.Now().Add(150*time.Millisecond)
 	if err := s.create(t.Context(), "expired", "csrf", until); err != nil { t.Fatal(err) }
-	blocker, err := s.sqlite.beginImmediate(t.Context())
+	blocker, err := s.beginImmediate(t.Context())
 	if err != nil { t.Fatal(err) }
 	defer func() { _ = blocker.Rollback() }()
 	done := make(chan error, 1)
@@ -169,8 +187,8 @@ func TestSQLiteSchemaOwnershipAndValidation(t *testing.T) {
 	if err = db.QueryRowContext(t.Context(), "PRAGMA user_version").Scan(&version); err != nil || version != 42 { t.Fatal("version changed", err) }
 	snapshot := store.sessionStore()
 	store.store.db = nil
-	store.store.sqlite.db = nil
-	if snapshot.db != db || db.Stats().MaxOpenConnections != 1 { t.Fatal("snapshot or pool ownership changed") }
+	selected, ok := snapshot.(*sqliteStore)
+	if !ok || selected.db != db || db.Stats().MaxOpenConnections != 1 { t.Fatal("snapshot or pool ownership changed") }
 	if err = snapshot.create(t.Context(), "nano", "csrf", time.Unix(1800000000, 123456789)); err != nil { t.Fatal(err) }
 	v, err := snapshot.load(t.Context(), "nano")
 	if err != nil || v.AbsoluteUntil.Nanosecond() != 123456789 { t.Fatal("nanoseconds rounded", err) }
@@ -237,7 +255,7 @@ func TestStoreRejectsPromotedImplementations(t *testing.T) {
 func TestSQLiteCancelledWriterDoesNotLeakConnection(t *testing.T) {
 	s, _ := testSQLiteStore(t, 1)
 	ctx, cancel := context.WithCancel(t.Context())
-	tx, err := s.sqlite.beginImmediate(ctx)
+	tx, err := s.beginImmediate(ctx)
 	if err != nil { t.Fatal(err) }
 	cancel()
 	if err = tx.Commit(ctx); err == nil { t.Fatal("cancelled commit succeeded") }
