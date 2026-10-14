@@ -4,9 +4,9 @@ import (
 	"context"
 	"database/sql"
 	"errors"
-	"fmt"
 	"net/http"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -17,6 +17,7 @@ import (
 
 const (
 	conformanceNonce     = "nonce"
+	conformanceState     = "state"
 	pendingSessionStatus = "pending"
 )
 
@@ -236,7 +237,7 @@ func testConformanceExactGeneration(t *testing.T, backend string) {
 		t.Fatal(err)
 	}
 	l := login{
-		State: "state", SessionID: "large", Nonce: conformanceNonce,
+		State: conformanceState, SessionID: "large", Nonce: conformanceNonce,
 		Verifier: []byte("cipher"), ReturnPath: "/", Expires: until,
 	}
 	if err := s.begin(ctx, &l); err != nil {
@@ -266,7 +267,7 @@ func TestSQLiteWaitThenExpire(t *testing.T) {
 	done := make(chan error, 1)
 	go func() {
 		l := login{
-			State: "state", SessionID: expiredSessionID, Nonce: "n",
+			State: conformanceState, SessionID: expiredSessionID, Nonce: "n",
 			Verifier: []byte("v"), ReturnPath: "/", Expires: until,
 		}
 		ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
@@ -343,7 +344,7 @@ func TestSQLiteConcurrentClaims(t *testing.T) {
 		t.Fatal(err)
 	}
 	l := login{
-		State: "state", SessionID: "browser", Nonce: conformanceNonce,
+		State: conformanceState, SessionID: "browser", Nonce: conformanceNonce,
 		Verifier: []byte("verifier"), ReturnPath: "/", Expires: time.Now().Add(time.Minute),
 	}
 	if err := s.begin(t.Context(), &l); err != nil {
@@ -390,14 +391,14 @@ func TestSQLiteGenerationOverflowFailsClosed(t *testing.T) {
 		t.Fatal(err)
 	}
 	l := login{
-		State: "state", SessionID: "max", Nonce: "n",
+		State: conformanceState, SessionID: "max", Nonce: "n",
 		Verifier: []byte("v"), ReturnPath: "/", Expires: time.Now().Add(time.Minute),
 	}
 	if err := s.begin(t.Context(), &l); err == nil {
 		t.Fatal("integer overflow accepted")
 	}
 	v, err := s.load(t.Context(), "max")
-	if err != nil || fmt.Sprint(v.Generation) != "9223372036854775807" {
+	if err != nil || strconv.FormatInt(v.Generation, 10) != "9223372036854775807" {
 		t.Fatal("overflow changed generation", err)
 	}
 	if strings.Contains(SQLiteSchema(), "user_version=") {
