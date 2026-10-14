@@ -1,5 +1,5 @@
 // Package browser implements AuthHub relying-party browser sessions using the
-// reviewed OIDC libraries and durable PostgreSQL generation fences. It supplies
+// reviewed OIDC libraries and durable generation fences. It supplies
 // identity proofs, never local user linking or application permissions.
 package browser
 
@@ -118,7 +118,7 @@ func newPostgresStore(ctx context.Context, db *sql.DB, schemaName string) (*Post
 // Store is mandatory: there is no in-memory fallback. No customizable token
 // transport or clock is exposed in the consumer API.
 type Options struct {
-	Store        *PostgresStore
+	Store        Store
 	ClientSecret string
 	StorageKey   []byte
 }
@@ -145,7 +145,7 @@ func newClient(ctx context.Context, c config, o Options) (*Client, error) {
 	}
 	// The database remains caller-owned. Snapshot our wrapper so neither the
 	// option object nor constructor inputs can replace the selected handle.
-	selectedStore := *o.Store.store
+	selectedStore := snapshotStore(o.Store)
 	aead, e := newAEAD(o.StorageKey)
 	if e != nil {
 		return nil, e
@@ -155,7 +155,7 @@ func newClient(ctx context.Context, c config, o Options) (*Client, error) {
 		return nil, e
 	}
 	return &Client{app: &app{
-		config: oidc.config, oidc: oidc, store: &selectedStore, aead: aead,
+		config: oidc.config, oidc: oidc, store: selectedStore, aead: aead,
 		now: time.Now, slots: make(chan struct{}, 32),
 	}}, nil
 }

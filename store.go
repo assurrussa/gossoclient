@@ -16,6 +16,7 @@ var errFenced = errors.New("session is no longer current")
 
 type (
 	store struct {
+		sqlite *sqliteStore
 		db     *sql.DB
 		schema string
 	}
@@ -56,6 +57,7 @@ func (s session) binding() string { return fmt.Sprintf("refresh:%s:%d", s.ID, s.
 func (l login) binding() string   { return "login:" + l.State + ":" + l.SessionID }
 
 func (s *store) ready(ctx context.Context) error {
+	if s.sqlite != nil { return s.sqlite.ready(ctx) }
 	// Fail closed on missing/partial schema; startup does not perform migrations.
 	var ok bool
 	e := s.db.QueryRowContext(ctx, `
@@ -80,6 +82,7 @@ refresh_state, refresh_owner FROM `+s.table("sso_example_sessions")+` LIMIT 0
 }
 
 func (s *store) create(ctx context.Context, id, csrf string, until time.Time) error {
+	if s.sqlite != nil { return s.sqlite.create(ctx, id, csrf, until) }
 	// #nosec G202 -- The schema is validated and quoted; table names are fixed.
 	_, e := s.db.ExecContext(ctx, `
 INSERT INTO `+s.table("sso_example_sessions")+`(cookie_digest, status, csrf, absolute_until) VALUES($1, 'pending', $2,
@@ -96,6 +99,7 @@ type storedProof struct {
 }
 
 func (s *store) load(ctx context.Context, id string) (session, error) {
+	if s.sqlite != nil { return s.sqlite.load(ctx, id) }
 	// #nosec G202 -- The schema is validated and quoted; table names are fixed.
 	return loadSession(s.db.QueryRowContext(ctx, `
 SELECT cookie_digest, generation, status, csrf, proof, fresh_until, absolute_until, refresh_cipher,
@@ -147,6 +151,7 @@ SELECT cookie_digest FROM `+s.table("sso_example_sessions")+` WHERE cookie_diges
 }
 
 func (s *store) begin(ctx context.Context, l *login) error {
+	if s.sqlite != nil { return s.sqlite.begin(ctx, l) }
 	tx, e := s.db.BeginTx(ctx, nil)
 	if e != nil {
 		return e
@@ -183,6 +188,7 @@ return_path, expires_at) VALUES($1, $2, $3, $4, $5, $6, $7)
 }
 
 func (s *store) claimLogin(ctx context.Context, state, id string) (login, error) {
+	if s.sqlite != nil { return s.sqlite.claimLogin(ctx, state, id) }
 	tx, e := s.db.BeginTx(ctx, nil)
 	if e != nil {
 		return login{}, e
@@ -244,6 +250,7 @@ nonce, verifier_cipher, return_path, expires_at
 }
 
 func (s *store) installLogin(ctx context.Context, l login, p identity, cipher []byte) error {
+	if s.sqlite != nil { return s.sqlite.installLogin(ctx, l, p, cipher) }
 	proof, e := json.Marshal(storedProof{Identity: p, LoginGeneration: l.Generation})
 	if e != nil {
 		return e
@@ -271,6 +278,7 @@ $4>clock_timestamp() AND $7>clock_timestamp()
 }
 
 func (s *store) claimRefresh(ctx context.Context, v session, owner string) (bool, error) {
+	if s.sqlite != nil { return s.sqlite.claimRefresh(ctx, v, owner) }
 	tx, e := s.db.BeginTx(ctx, nil)
 	if e != nil {
 		return false, e
@@ -298,6 +306,7 @@ generation=$2 AND status='active' AND refresh_state='ready' AND absolute_until>c
 }
 
 func (s *store) installRefresh(ctx context.Context, v session, owner string, p identity, cipher []byte) error {
+	if s.sqlite != nil { return s.sqlite.installRefresh(ctx, v, owner, p, cipher) }
 	proof, e := json.Marshal(storedProof{Identity: p, LoginGeneration: v.LoginGeneration})
 	if e != nil {
 		return e
@@ -324,6 +333,7 @@ refresh_state='claimed' AND status='active' AND absolute_until>clock_timestamp()
 }
 
 func (s *store) uncertain(ctx context.Context, v session, owner string) error {
+	if s.sqlite != nil { return s.sqlite.uncertain(ctx, v, owner) }
 	// No lease expiry may turn claimed/uncertain into ready with the old secret.
 	// #nosec G202 -- The schema is validated and quoted; table names are fixed.
 	result, e := s.db.ExecContext(ctx, `
@@ -334,6 +344,7 @@ cookie_digest=$1 AND generation=$2 AND refresh_owner=$3 AND refresh_state='claim
 }
 
 func (s *store) end(ctx context.Context, id string, expected *int64) error {
+	if s.sqlite != nil { return s.sqlite.end(ctx, id, expected) }
 	tx, e := s.db.BeginTx(ctx, nil)
 	if e != nil {
 		return e
@@ -368,6 +379,7 @@ refresh_cipher=NULL, refresh_state='none', refresh_owner='' WHERE cookie_digest=
 // endLocal ends only the original non-active browser state. Callback installs
 // active state at the pending generation, so generation alone cannot fence it.
 func (s *store) endLocal(ctx context.Context, v session) error {
+	if s.sqlite != nil { return s.sqlite.endLocal(ctx, v) }
 	// #nosec G202 -- The schema is validated and quoted; table names are fixed.
 	result, e := s.db.ExecContext(ctx, `
 UPDATE `+s.table("sso_example_sessions")+` SET generation=generation+1, status='ended', proof=NULL, fresh_until=NULL,
@@ -394,6 +406,7 @@ func changed(result sql.Result, e error) error {
 // endBinding checks the complete admission while holding the same row lock used
 // by refresh installation. No network operation occurs inside this transaction.
 func (s *store) endBinding(ctx context.Context, b Binding) (session, error) {
+	if s.sqlite != nil { return s.sqlite.endBinding(ctx, b) }
 	tx, e := s.db.BeginTx(ctx, nil)
 	if e != nil {
 		return session{}, e

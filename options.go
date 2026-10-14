@@ -70,9 +70,9 @@ func WithCallback(value string) Option {
 	return option("callback", func(o *options) { o.config.Callback = value })
 }
 
-// WithStore supplies a store constructed by NewPostgresStore. The caller still
+// WithStore supplies a store constructed by NewPostgresStore or NewSQLiteStore. The caller still
 // owns its database; constructing a client does not transfer pool ownership.
-func WithStore(value *PostgresStore) Option {
+func WithStore(value Store) Option {
 	return option("store", func(o *options) { o.inputs.Store = value })
 }
 
@@ -178,7 +178,7 @@ func buildOptions(values []Option) (config, Options, error) {
 }
 
 func validateInputs(o Options) error {
-	if o.Store == nil || o.Store.store == nil || o.Store.store.db == nil {
+	if !validStore(o.Store) {
 		return errors.New("durable session store required")
 	}
 	if len(o.StorageKey) != 32 {
