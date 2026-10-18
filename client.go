@@ -41,13 +41,16 @@ type Config struct {
 	Freshness                                     time.Duration
 	IssuerCAFile                                  string
 	Ingress                                       *ingress.Policy
+	// RequestEmail opts into requesting and validating signed OIDC email claims.
+	// It does not require email or grant local linking, membership or roles.
+	RequestEmail bool
 }
 
 func (c Config) internal() config {
 	v := config{
 		Issuer: c.Issuer, ClientID: c.ClientID, ProjectID: c.ProjectID,
 		Origin: c.Origin, Callback: c.Callback, Freshness: c.Freshness,
-		IssuerCAFile: c.IssuerCAFile, Ingress: c.Ingress,
+		IssuerCAFile: c.IssuerCAFile, Ingress: c.Ingress, RequestEmail: c.RequestEmail,
 	}
 	if c.Ingress != nil {
 		v.Transport = privateHTTPTransport

@@ -162,7 +162,7 @@ Render `View.CentralLogout` only when nonempty.
 
 Call `Verify(request)` on each protected browser request. Resolve the verified
 issuer and subject to an explicitly linked local account, then check your
-application's own permissions. Standard email/username claims and profile/project metadata are display
+application's own permissions. Standard username claims and profile/project metadata are display
 data, not account-linking or authorization evidence. The optional, separately
 signed `authhub_identifiers` claim has the bounded versioned contract below.
 
@@ -370,3 +370,59 @@ Internally, application session logic calls a private transition interface.
 PostgreSQL and SQLite implement it directly; driver selection and immutable
 handle snapshots happen at construction. Backend SQL, row/write locks and
 ambiguous-transaction cleanup remain inside each adapter.
+
+## Optional signed email snapshots
+
+Email claims remain opt-in for existing consumers. Add `WithEmailScope()` to
+`NewWithOptions`, or set `Config.RequestEmail = true` with `New`, to request
+`openid profile email` instead of the unchanged `openid profile` default.
+The issuer/client registration must support that scope.
+
+With this option, `Proof.Identity().Email` and `EmailVerified` come only from
+the cryptographically verified ID token. Malformed/null email claims, non-boolean
+verification flags, and a true flag without a valid address deny that proof.
+Missing claims or a false flag never imply verification. There is no fallback
+to `authhub_identifiers.email_alias`, profile metadata, UserInfo, or browser input.
+Without the option, unsolicited email claims retain the previous ignored behavior.
+
+These are issuance snapshots, not immutable identity keys or local authority.
+A new verified refresh snapshot can change or remove email/verification; it
+never changes the older Proof value. Durable JSON stores retain the fields
+across restart, without a schema migration. Legacy rows without them remain
+unverified. Generation, exact issuer/subject/client/project/session pins and all
+original freshness/absolute bounds retain their existing checks.
+
+The SDK does not globally require verified email. A host that requires it must
+check both a nonempty Email and EmailVerified for enrollment, together with its
+current project proof, invitation/link, membership and role policy. Never
+auto-link accounts by matching email. This feature neither verifies a mailbox
+itself nor makes an email alias verified; the issuer must run the actual
+mailbox challenge before signing a true claim.
+
+The existing signed `AuthHubIdentifiers.Login` contract is unchanged. Login,
+email and display/preferred username can change between issuance snapshots;
+only exact issuer plus subject identifies the external account. None of those
+mutable values, including a true email verification claim, grants a local role,
+membership or automatic identity link.
+
+### Transactional callback integrations
+
+Use `Client.CallbackResult(w, r)` when a host must provision local state only
+after a newly completed callback. It shares the existing ingress, browser/state,
+PKCE/nonce, one-use code exchange, request limits and durable session protocol.
+On success it returns an opaque `CallbackOutcome` after a confirmed installation
+and exact-generation re-read. `Proof()` is immutable and retains the original
+deadline; `ReturnPath()` is the validated path stored by `Begin`, bound to that
+login state. Callback query parameters and an existing cookie cannot mint it.
+
+HTTP ownership is explicit: on error the SDK has already written the failure
+response, so return immediately. On success only security headers are set:
+the host owns the success response and may first commit its local transaction.
+Do not call `Callback` again, exchange the code twice, or infer success from a
+redirect status/Location. Existing `Callback` and `Handler` still return a 303 redirect.
+A local transaction failure does not undo a committed RP callback; deny local
+access and require a new state-bound login for another enrollment attempt.
+The outcome grants no local identity link, role or membership. Validate exact
+issuer/client/project/subject, current native state and any required signed
+email claims; mutable login/email/profile changes never change identity or
+grant authority. Revalidate the original proof via read-only `Check` at commit.

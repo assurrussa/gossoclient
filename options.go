@@ -95,6 +95,15 @@ func WithFreshness(value time.Duration) Option {
 	return option("freshness", func(o *options) { o.config.Freshness = value })
 }
 
+// WithEmailScope requests the OIDC email scope and retains strictly typed,
+// signed email/email_verified claims in each proof snapshot. Missing or false
+// verification never becomes true. Email is not required; the host must enforce
+// its enrollment policy and must never infer local linking or roles from email.
+// Omit this option to retain the existing scopes and email-claim behavior.
+func WithEmailScope() Option {
+	return option("email scope", func(o *options) { o.config.RequestEmail = true })
+}
+
 // WithIssuerCAFile selects bounded public PEM trust roots read at construction.
 func WithIssuerCAFile(value string) Option {
 	return option("issuer CA file", func(o *options) { o.config.IssuerCAFile = value })

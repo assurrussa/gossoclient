@@ -36,6 +36,12 @@ type app struct {
 }
 
 func (a *app) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	_, _ = a.serveHTTP(w, r, false)
+}
+
+// The common dispatcher preserves ingress, concurrency and request deadlines.
+// A typed callback leaves successful HTTP delivery to its host.
+func (a *app) serveHTTP(w http.ResponseWriter, r *http.Request, typedCallback bool) (CallbackOutcome, error) {
 	w.Header().Set("Cache-Control", "no-store")
 	// Keep the exact Origin on HTTPS form POSTs without leaking paths or queries
 	// in Referer. no-referrer makes native form submissions send Origin: null.
@@ -46,14 +52,14 @@ func (a *app) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Security-Policy", policy)
 	if !a.validRequest(r) {
 		http.Error(w, "Invalid request", http.StatusBadRequest)
-		return
+		return CallbackOutcome{}, ErrDenied
 	}
 	select {
 	case a.slots <- struct{}{}:
 		defer func() { <-a.slots }()
 	default:
 		http.Error(w, "Please try again later", http.StatusServiceUnavailable)
-		return
+		return CallbackOutcome{}, ErrUnavailable
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 12*time.Second)
 	defer cancel()
@@ -64,12 +70,17 @@ func (a *app) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case r.URL.Path == "/login" && r.Method == http.MethodPost:
 		a.login(w, r)
 	case r.URL.Path == "/callback" && r.Method == http.MethodGet:
-		a.callback(w, r)
+		outcome, err := a.callback(w, r)
+		if err == nil && !typedCallback {
+			http.Redirect(w, r, outcome.returnPath, http.StatusSeeOther)
+		}
+		return outcome, err
 	case r.URL.Path == "/logout" && r.Method == http.MethodPost:
 		a.logout(w, r)
 	default:
 		http.NotFound(w, r)
 	}
+	return CallbackOutcome{}, nil
 }
 
 func browserID(r *http.Request) (string, error) {
@@ -229,48 +240,59 @@ func (a *app) login(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, target, http.StatusSeeOther)
 }
 
-func (a *app) callback(w http.ResponseWriter, r *http.Request) {
+func (a *app) claimCallbackLogin(w http.ResponseWriter, r *http.Request) (state login, reference, code string, err error) {
 	q, e := url.ParseQuery(r.URL.RawQuery)
 	if e != nil || len(q) > 8 || len(q.Get("state")) != 43 {
 		http.Error(w, "Invalid callback", http.StatusBadRequest)
-		return
+		return login{}, "", "", ErrDenied
 	}
 	for k, v := range q {
 		if len(k) > 64 || len(v) != 1 || len(v[0]) > 4096 {
 			http.Error(w, "Invalid callback", http.StatusBadRequest)
-			return
+			return login{}, "", "", ErrDenied
 		}
 	}
 	id, e := browserID(r)
 	if e != nil {
 		http.Error(w, "Sign-in browser binding was lost", http.StatusBadRequest)
-		return
+		return login{}, "", "", ErrDenied
 	}
 	l, e := a.store.claimLogin(r.Context(), digest(q.Get("state")), id)
 	if e != nil {
 		http.Error(w, "Sign-in expired or already used", http.StatusBadRequest)
-		return
+		return login{}, "", "", publicError(e)
 	}
 	if q.Get("error") != "" || q.Get("code") == "" {
 		http.Error(w, "Sign-in was not completed; return to the app", http.StatusUnauthorized)
-		return
+		return login{}, "", "", ErrDenied
+	}
+	return l, id, q.Get("code"), nil
+}
+
+func (a *app) callback(w http.ResponseWriter, r *http.Request) (CallbackOutcome, error) {
+	l, id, code, e := a.claimCallbackLogin(w, r)
+	if e != nil {
+		return CallbackOutcome{}, e
 	}
 	verifier, e := unseal(a.aead, l.Verifier, l.binding())
 	if e != nil {
 		http.Error(w, "Sign-in state unavailable", http.StatusServiceUnavailable)
-		return
+		return CallbackOutcome{}, ErrUnavailable
 	}
-	token, e := a.oidc.oauth.Exchange(a.oidc.context(r.Context()), q.Get("code"), oauth2.VerifierOption(verifier))
+	token, e := a.oidc.oauth.Exchange(a.oidc.context(r.Context()), code, oauth2.VerifierOption(verifier))
 	// The consumed transaction is never retried, including an unknown exchange.
 	if e != nil {
 		http.Error(w, "Sign-in failed; start a new sign-in", http.StatusUnauthorized)
-		return
+		if definitive(e) {
+			return CallbackOutcome{}, ErrDenied
+		}
+		return CallbackOutcome{}, ErrUnavailable
 	}
 	p, e := a.oidc.verify(r.Context(), token, l.Nonce, nil)
 	if e != nil || token.RefreshToken == "" || len(token.RefreshToken) > 4096 {
 		a.discard(r.Context(), token.RefreshToken)
 		http.Error(w, "Invalid identity proof", http.StatusUnauthorized)
-		return
+		return CallbackOutcome{}, ErrDenied
 	}
 	v := session{ID: id, Generation: l.Generation}
 	encrypted, e := seal(a.aead, token.RefreshToken, v.binding())
@@ -280,7 +302,7 @@ func (a *app) callback(w http.ResponseWriter, r *http.Request) {
 	if e != nil {
 		a.discard(r.Context(), token.RefreshToken)
 		http.Error(w, "Sign-in was superseded; return to the app", http.StatusUnauthorized)
-		return
+		return CallbackOutcome{}, publicError(e)
 	}
 	// Installation is one committed transition, not an HTTP-delivery promise.
 	// Re-read the current row so its conservative absolute end and any generation
@@ -288,18 +310,28 @@ func (a *app) callback(w http.ResponseWriter, r *http.Request) {
 	current, e := a.store.load(r.Context(), id)
 	if e != nil {
 		http.Error(w, "Sign-in acknowledgement unavailable", http.StatusServiceUnavailable)
-		return
+		return CallbackOutcome{}, ErrUnavailable
 	}
 	if current.Status != sessionActive || current.Generation != l.Generation ||
 		current.Proof == nil || current.RefreshState == "claimed" {
 		http.Error(w, "Sign-in was superseded; return to the app", http.StatusUnauthorized)
-		return
+		return CallbackOutcome{}, ErrDenied
 	}
 	if !a.now().Before(minTime(current.FreshUntil, current.AbsoluteUntil)) {
 		http.Error(w, "Sign-in proof expired before acknowledgement; return to the app", http.StatusUnauthorized)
-		return
+		return CallbackOutcome{}, ErrDenied
 	}
-	http.Redirect(w, r, l.ReturnPath, http.StatusSeeOther)
+	proof := a.proof(current)
+	if proof == nil || current.LoginGeneration != l.Generation ||
+		proof.identity.Issuer != p.Issuer || proof.identity.ClientID != p.ClientID ||
+		proof.identity.ProjectID != p.ProjectID || proof.identity.Subject != p.Subject ||
+		proof.identity.SessionID != p.SessionID || proof.identity.AuthTime != p.AuthTime ||
+		proof.identity.Email != p.Email || proof.identity.EmailVerified != p.EmailVerified ||
+		!proof.identity.IssuedAt.Equal(p.IssuedAt) {
+		http.Error(w, "Sign-in was superseded; return to the app", http.StatusUnauthorized)
+		return CallbackOutcome{}, ErrDenied
+	}
+	return CallbackOutcome{proof: *proof, returnPath: l.ReturnPath}, nil
 }
 
 func (a *app) discard(parent context.Context, secret string) {
