@@ -9,12 +9,10 @@ import (
 
 // signedEmail reads only claims inside the already verified ID token. Legacy
 // clients neither request nor interpret these claims. No profile/alias fallback.
-func signedEmail(enabled bool, rawEmail, rawVerified json.RawMessage) (string, bool, bool) {
+func signedEmail(enabled bool, rawEmail, rawVerified json.RawMessage) (email string, verified, valid bool) {
 	if !enabled {
 		return "", false, true
 	}
-	var email string
-	var verified bool
 	if len(rawEmail) != 0 {
 		var value *string
 		if json.Unmarshal(rawEmail, &value) != nil || value == nil || !validSignedEmail(*value) {
