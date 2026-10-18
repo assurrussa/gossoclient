@@ -38,7 +38,7 @@ func (w *callbackDelivery) Write(body []byte) (int, error) {
 
 func callbackRequest(t *testing.T, a *app, cookie *http.Cookie, state string) *http.Request {
 	t.Helper()
-	query := url.Values{"state": {state}, testCallbackCodeField: {testCallbackCode}}
+	query := url.Values{conformanceState: {state}, testCallbackCodeField: {testCallbackCode}}
 	r := httptest.NewRequestWithContext(t.Context(), http.MethodGet, a.config.Origin+testCallbackPath+"?"+query.Encode(), nil)
 	if cookie != nil {
 		r.AddCookie(cookie)
@@ -72,7 +72,7 @@ func beginCallbackLogin(t *testing.T, a *app, p *authority, cookie *http.Cookie)
 	p.mu.Lock()
 	p.nonce, p.challenge = q.Get("nonce"), q.Get("code_challenge")
 	p.mu.Unlock()
-	return cookie, q.Get("state")
+	return cookie, q.Get(conformanceState)
 }
 
 func assertNoCallbackOutcome(t *testing.T, outcome CallbackOutcome, err error) {
