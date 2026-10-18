@@ -10,15 +10,15 @@ import (
 )
 
 const (
-	testCallbackPath       = "/callback"
-	testCallbackCode       = "one-code"
-	testCallbackCodeField = "code"
-	testCallbackCSRFField = "csrf"
-	testCallbackWrongNonce = "wrong"
+	testCallbackPath         = "/callback"
+	testCallbackCode         = "one-code"
+	testCallbackCodeField    = "code"
+	testCallbackCSRFField    = "csrf"
+	testCallbackWrongNonce   = "wrong"
 	testCallbackLostResponse = "lost"
-	testCallbackLocation   = "Location"
-	testCallbackSuperseded = "superseded"
-	testCallbackReturn     = "/?notifyhub_sso=invitation&invitation=opaque-invitation"
+	testCallbackLocation     = "Location"
+	testCallbackSuperseded   = "superseded"
+	testCallbackReturn       = "/?notifyhub_sso=invitation&invitation=opaque-invitation"
 )
 
 type callbackDelivery struct {

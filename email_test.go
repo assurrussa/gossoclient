@@ -17,7 +17,7 @@ const (
 	testEmailTrue          = "true"
 	testEmailAliasClaim    = "email_alias"
 	testEmailClaim         = "email"
-	testEmailLoginClaim = "login"
+	testEmailLoginClaim    = "login"
 	testEmailVerifiedClaim = "email_verified"
 	testEmailNonce         = "nonce"
 	testEmailIDToken       = "id_token"

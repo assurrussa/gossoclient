@@ -19,7 +19,7 @@ const (
 	conformanceNonce               = "nonce"
 	conformancePostgresBackend     = "postgres"
 	conformanceSQLiteSingleBackend = "sqlite-one-connection"
-	conformanceSQLitePoolBackend = "sqlite-pool"
+	conformanceSQLitePoolBackend   = "sqlite-pool"
 	conformanceState               = "state"
 	pendingSessionStatus           = "pending"
 )
