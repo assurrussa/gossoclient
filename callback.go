@@ -6,7 +6,7 @@ import "net/http"
 // A zero outcome conveys no authority. Its return path was saved with the
 // one-use state/PKCE/browser-bound login, never read from the callback query.
 type CallbackOutcome struct {
-	proof Proof
+	proof      Proof
 	returnPath string
 }
 

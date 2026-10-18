@@ -16,11 +16,11 @@ import (
 )
 
 const (
-	conformanceNonce     = "nonce"
-	conformancePostgresBackend = "postgres"
+	conformanceNonce               = "nonce"
+	conformancePostgresBackend     = "postgres"
 	conformanceSQLiteSingleBackend = "sqlite-one-connection"
-	conformanceState     = "state"
-	pendingSessionStatus = "pending"
+	conformanceState               = "state"
+	pendingSessionStatus           = "pending"
 )
 
 // The conformance fixture owns its test pool separately from the behavioral

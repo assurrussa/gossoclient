@@ -10,11 +10,11 @@ import (
 )
 
 const (
-	testCallbackPath = "/callback"
-	testCallbackCode = "one-code"
-	testCallbackLocation = "Location"
+	testCallbackPath       = "/callback"
+	testCallbackCode       = "one-code"
+	testCallbackLocation   = "Location"
 	testCallbackSuperseded = "superseded"
-	testCallbackReturn = "/?notifyhub_sso=invitation&invitation=opaque-invitation"
+	testCallbackReturn     = "/?notifyhub_sso=invitation&invitation=opaque-invitation"
 )
 
 type callbackDelivery struct {
@@ -146,7 +146,7 @@ func TestCallbackResultCannotUseExistingCookieOrFailedLogin(t *testing.T) {
 
 type callbackStorageFailure struct {
 	sessionStorage
-	phase string
+	phase     string
 	installed bool
 }
 

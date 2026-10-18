@@ -13,9 +13,9 @@ import (
 
 const (
 	testSignedEmail        = "verified@example.test"
-	testEmailMissing = "missing"
-	testEmailTrue = "true"
-	testEmailAliasClaim = "email_alias"
+	testEmailMissing       = "missing"
+	testEmailTrue          = "true"
+	testEmailAliasClaim    = "email_alias"
 	testEmailClaim         = "email"
 	testEmailVerifiedClaim = "email_verified"
 	testEmailNonce         = "nonce"
