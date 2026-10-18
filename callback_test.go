@@ -15,6 +15,7 @@ const (
 	testCallbackCodeField = "code"
 	testCallbackCSRFField = "csrf"
 	testCallbackWrongNonce = "wrong"
+	testCallbackLostResponse = "lost"
 	testCallbackLocation   = "Location"
 	testCallbackSuperseded = "superseded"
 	testCallbackReturn     = "/?notifyhub_sso=invitation&invitation=opaque-invitation"
@@ -213,7 +214,7 @@ func TestLegacyCallbackStillRedirectsAndTypedRouteIsExact(t *testing.T) {
 }
 
 func TestCallbackResultInvalidProofAndTransportReturnNoAuthority(t *testing.T) {
-	for _, mode := range []string{"invalid-proof", lostResponseMode} {
+	for _, mode := range []string{"invalid-proof", testCallbackLostResponse} {
 		t.Run(mode, func(t *testing.T) {
 			store, _ := testConformanceStore(t, conformanceSQLiteSingleBackend)
 			a, p := conformanceApp(t, store)
@@ -226,7 +227,7 @@ func TestCallbackResultInvalidProofAndTransportReturnNoAuthority(t *testing.T) {
 			w := httptest.NewRecorder()
 			outcome, err := (&Client{app: a}).CallbackResult(w, callbackRequest(t, a, cookie, state))
 			assertNoCallbackOutcome(t, outcome, err)
-			if mode == lostResponseMode && !errors.Is(err, ErrUnavailable) {
+			if mode == testCallbackLostResponse && !errors.Is(err, ErrUnavailable) {
 				t.Fatal("transport error became a completed login or identity denial", err)
 			}
 			if p.calls.Load() != 1 || w.Code != http.StatusUnauthorized {

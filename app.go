@@ -240,37 +240,37 @@ func (a *app) login(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, target, http.StatusSeeOther)
 }
 
-func (a *app) claimCallbackLogin(w http.ResponseWriter, r *http.Request) (login, string, error) {
+func (a *app) claimCallbackLogin(w http.ResponseWriter, r *http.Request) (state login, reference, code string, err error) {
 	q, e := url.ParseQuery(r.URL.RawQuery)
 	if e != nil || len(q) > 8 || len(q.Get("state")) != 43 {
 		http.Error(w, "Invalid callback", http.StatusBadRequest)
-		return login{}, "", ErrDenied
+		return login{}, "", "", ErrDenied
 	}
 	for k, v := range q {
 		if len(k) > 64 || len(v) != 1 || len(v[0]) > 4096 {
 			http.Error(w, "Invalid callback", http.StatusBadRequest)
-			return login{}, "", ErrDenied
+			return login{}, "", "", ErrDenied
 		}
 	}
 	id, e := browserID(r)
 	if e != nil {
 		http.Error(w, "Sign-in browser binding was lost", http.StatusBadRequest)
-		return login{}, "", ErrDenied
+		return login{}, "", "", ErrDenied
 	}
 	l, e := a.store.claimLogin(r.Context(), digest(q.Get("state")), id)
 	if e != nil {
 		http.Error(w, "Sign-in expired or already used", http.StatusBadRequest)
-		return login{}, "", publicError(e)
+		return login{}, "", "", publicError(e)
 	}
 	if q.Get("error") != "" || q.Get("code") == "" {
 		http.Error(w, "Sign-in was not completed; return to the app", http.StatusUnauthorized)
-		return login{}, "", ErrDenied
+		return login{}, "", "", ErrDenied
 	}
-	return l, id, nil
+	return l, id, q.Get("code"), nil
 }
 
 func (a *app) callback(w http.ResponseWriter, r *http.Request) (CallbackOutcome, error) {
-	l, id, e := a.claimCallbackLogin(w, r)
+	l, id, code, e := a.claimCallbackLogin(w, r)
 	if e != nil {
 		return CallbackOutcome{}, e
 	}
@@ -279,7 +279,7 @@ func (a *app) callback(w http.ResponseWriter, r *http.Request) (CallbackOutcome,
 		http.Error(w, "Sign-in state unavailable", http.StatusServiceUnavailable)
 		return CallbackOutcome{}, ErrUnavailable
 	}
-	token, e := a.oidc.oauth.Exchange(a.oidc.context(r.Context()), q.Get("code"), oauth2.VerifierOption(verifier))
+	token, e := a.oidc.oauth.Exchange(a.oidc.context(r.Context()), code, oauth2.VerifierOption(verifier))
 	// The consumed transaction is never retried, including an unknown exchange.
 	if e != nil {
 		http.Error(w, "Sign-in failed; start a new sign-in", http.StatusUnauthorized)
