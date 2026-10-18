@@ -13,6 +13,9 @@ import (
 
 const (
 	testSignedEmail        = "verified@example.test"
+	testEmailMissing = "missing"
+	testEmailTrue = "true"
+	testEmailAliasClaim = "email_alias"
 	testEmailClaim         = "email"
 	testEmailVerifiedClaim = "email_verified"
 	testEmailNonce         = "nonce"
@@ -66,7 +69,7 @@ func TestSignedEmailClaimsAndNoFallback(t *testing.T) {
 		verified bool
 		denied   bool
 	}{
-		{name: "missing"},
+		{name: testEmailMissing},
 		{
 			name: "verified", claims: map[string]any{testEmailClaim: testSignedEmail, testEmailVerifiedClaim: true},
 			email: testSignedEmail, verified: true,
@@ -80,7 +83,7 @@ func TestSignedEmailClaimsAndNoFallback(t *testing.T) {
 		{name: "true without email", claims: map[string]any{testEmailVerifiedClaim: true}, denied: true},
 		{name: "null email", claims: map[string]any{testEmailClaim: nil}, denied: true},
 		{name: "null flag", claims: map[string]any{testEmailVerifiedClaim: nil}, denied: true},
-		{name: "string flag", claims: map[string]any{testEmailVerifiedClaim: "true"}, denied: true},
+		{name: "string flag", claims: map[string]any{testEmailVerifiedClaim: testEmailTrue}, denied: true},
 		{name: "number flag", claims: map[string]any{testEmailVerifiedClaim: 1}, denied: true},
 		{name: "number email", claims: map[string]any{testEmailClaim: 1}, denied: true},
 		{name: "empty email", claims: map[string]any{testEmailClaim: ""}, denied: true},
@@ -93,10 +96,10 @@ func TestSignedEmailClaimsAndNoFallback(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			p.claims = func(m map[string]any) {
 				m[testEmailIdentifiers] = map[string]any{
-					"version": 1, "login": "User", "email_alias": "alias@example.test",
+					"version": 1, "login": "User", testEmailAliasClaim: "alias@example.test",
 				}
 				m["authhub_profile"] = map[string]string{
-					testEmailClaim: "profile@example.test", testEmailVerifiedClaim: "true",
+					testEmailClaim: "profile@example.test", testEmailVerifiedClaim: testEmailTrue,
 				}
 				for key, value := range tc.claims {
 					m[key] = value
@@ -117,7 +120,7 @@ func TestSignedEmailClaimsAndNoFallback(t *testing.T) {
 	}
 	// Opt-out preserves legacy handling, even for unsolicited malformed claims.
 	client.config.RequestEmail = false
-	p.claims = func(m map[string]any) { m[testEmailVerifiedClaim] = "true" }
+	p.claims = func(m map[string]any) { m[testEmailVerifiedClaim] = testEmailTrue }
 	token := (&oauth2.Token{}).WithExtra(map[string]any{testEmailIDToken: p.token(testEmailNonce)})
 	got, err := client.verify(t.Context(), token, testEmailNonce, nil)
 	if err != nil || got.Email != "" || got.EmailVerified {
@@ -180,7 +183,7 @@ func TestEmailClaimsRequireValidSignatureAndRefreshSnapshot(t *testing.T) {
 }
 
 func TestEmailProofDurableRestartAndRefresh(t *testing.T) {
-	for _, backend := range []string{"postgres", "sqlite-one-connection", "sqlite-pool"} {
+	for _, backend := range []string{conformancePostgresBackend, conformanceSQLiteSingleBackend, "sqlite-pool"} {
 		t.Run(backend, func(t *testing.T) { testEmailProofPersistence(t, backend) })
 	}
 }
@@ -198,6 +201,9 @@ func testEmailProofPersistence(t *testing.T, backend string) {
 	}
 	view := first.Identity()
 	view.Email, view.EmailVerified = "edited@example.test", false
+	if view.Email != "edited@example.test" || view.EmailVerified {
+		t.Fatal("identity view edit was not applied")
+	}
 	if first.Identity().Email != testSignedEmail || !first.Identity().EmailVerified {
 		t.Fatal("identity view mutated immutable proof")
 	}

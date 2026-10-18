@@ -13,7 +13,6 @@ const (
 	testCallbackPath = "/callback"
 	testCallbackCode = "one-code"
 	testCallbackLocation = "Location"
-	testCallbackSQLite = "sqlite-one-connection"
 	testCallbackSuperseded = "superseded"
 	testCallbackReturn = "/?notifyhub_sso=invitation&invitation=opaque-invitation"
 )
@@ -80,7 +79,7 @@ func assertNoCallbackOutcome(t *testing.T, outcome CallbackOutcome, err error) {
 }
 
 func TestCallbackResultCommittedImmutableAndOneUse(t *testing.T) {
-	for _, backend := range []string{"postgres", testCallbackSQLite, "sqlite-pool"} {
+	for _, backend := range []string{"postgres", conformanceSQLiteSingleBackend, "sqlite-pool"} {
 		t.Run(backend, func(t *testing.T) {
 			store, _ := testConformanceStore(t, backend)
 			a, p := conformanceApp(t, store)
@@ -115,7 +114,7 @@ func TestCallbackResultCommittedImmutableAndOneUse(t *testing.T) {
 }
 
 func TestCallbackResultCannotUseExistingCookieOrFailedLogin(t *testing.T) {
-	store, _ := testConformanceStore(t, testCallbackSQLite)
+	store, _ := testConformanceStore(t, conformanceSQLiteSingleBackend)
 	a, p := conformanceApp(t, store)
 	client := &Client{app: a}
 	cookie, original := signedIn(t, a, p)
@@ -179,7 +178,7 @@ func (s *callbackStorageFailure) load(ctx context.Context, id string) (session, 
 func TestCallbackResultFailsClosedOnStorageAndGenerationFailure(t *testing.T) {
 	for _, phase := range []string{"before-install", "unknown-install", "reread", testCallbackSuperseded} {
 		t.Run(phase, func(t *testing.T) {
-			store, _ := testConformanceStore(t, testCallbackSQLite)
+			store, _ := testConformanceStore(t, conformanceSQLiteSingleBackend)
 			a, p := conformanceApp(t, store)
 			cookie, state := beginCallbackLogin(t, a, p, nil)
 			a.store = &callbackStorageFailure{sessionStorage: a.store, phase: phase}
@@ -196,7 +195,7 @@ func TestCallbackResultFailsClosedOnStorageAndGenerationFailure(t *testing.T) {
 }
 
 func TestLegacyCallbackStillRedirectsAndTypedRouteIsExact(t *testing.T) {
-	store, _ := testConformanceStore(t, testCallbackSQLite)
+	store, _ := testConformanceStore(t, conformanceSQLiteSingleBackend)
 	a, p := conformanceApp(t, store)
 	cookie, state := beginCallbackLogin(t, a, p, nil)
 	w := httptest.NewRecorder()
@@ -213,7 +212,7 @@ func TestLegacyCallbackStillRedirectsAndTypedRouteIsExact(t *testing.T) {
 func TestCallbackResultInvalidProofAndTransportReturnNoAuthority(t *testing.T) {
 	for _, mode := range []string{"invalid-proof", "lost"} {
 		t.Run(mode, func(t *testing.T) {
-			store, _ := testConformanceStore(t, testCallbackSQLite)
+			store, _ := testConformanceStore(t, conformanceSQLiteSingleBackend)
 			a, p := conformanceApp(t, store)
 			cookie, state := beginCallbackLogin(t, a, p, nil)
 			if mode == "invalid-proof" {
