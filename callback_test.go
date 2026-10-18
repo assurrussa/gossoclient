@@ -12,6 +12,9 @@ import (
 const (
 	testCallbackPath       = "/callback"
 	testCallbackCode       = "one-code"
+	testCallbackCodeField = "code"
+	testCallbackCSRFField = "csrf"
+	testCallbackWrongNonce = "wrong"
 	testCallbackLocation   = "Location"
 	testCallbackSuperseded = "superseded"
 	testCallbackReturn     = "/?notifyhub_sso=invitation&invitation=opaque-invitation"
@@ -33,8 +36,8 @@ func (w *callbackDelivery) Write(body []byte) (int, error) {
 }
 
 func callbackRequest(t *testing.T, a *app, cookie *http.Cookie, state string) *http.Request {
-	query := url.Values{"state": {state}, "code": {testCallbackCode}}
 	t.Helper()
+	query := url.Values{"state": {state}, testCallbackCodeField: {testCallbackCode}}
 	r := httptest.NewRequestWithContext(t.Context(), http.MethodGet, a.config.Origin+testCallbackPath+"?"+query.Encode(), nil)
 	if cookie != nil {
 		r.AddCookie(cookie)
@@ -56,7 +59,7 @@ func beginCallbackLogin(t *testing.T, a *app, p *authority, cookie *http.Cookie)
 		t.Fatal(err)
 	}
 	response := request(a, http.MethodPost, "/login", cookie,
-		url.Values{"csrf": {row.CSRF}, "return": {testCallbackReturn}})
+		url.Values{testCallbackCSRFField: {row.CSRF}, "return": {testCallbackReturn}})
 	if response.Code != http.StatusSeeOther {
 		t.Fatal("begin failed", response.Code)
 	}
@@ -79,7 +82,7 @@ func assertNoCallbackOutcome(t *testing.T, outcome CallbackOutcome, err error) {
 }
 
 func TestCallbackResultCommittedImmutableAndOneUse(t *testing.T) {
-	for _, backend := range []string{"postgres", conformanceSQLiteSingleBackend, "sqlite-pool"} {
+	for _, backend := range []string{"postgres", conformanceSQLiteSingleBackend, conformanceSQLitePoolBackend} {
 		t.Run(backend, func(t *testing.T) {
 			store, _ := testConformanceStore(t, backend)
 			a, p := conformanceApp(t, store)
@@ -128,7 +131,7 @@ func TestCallbackResultCannotUseExistingCookieOrFailedLogin(t *testing.T) {
 	cookie, state := beginCallbackLogin(t, a, p, cookie)
 	failed := callbackRequest(t, a, cookie, state)
 	q := failed.URL.Query()
-	q.Del("code")
+	q.Del(testCallbackCodeField)
 	q.Set("error", "access_denied")
 	failed.URL.RawQuery = q.Encode()
 	outcome, err = client.CallbackResult(httptest.NewRecorder(), failed)
@@ -210,20 +213,20 @@ func TestLegacyCallbackStillRedirectsAndTypedRouteIsExact(t *testing.T) {
 }
 
 func TestCallbackResultInvalidProofAndTransportReturnNoAuthority(t *testing.T) {
-	for _, mode := range []string{"invalid-proof", "lost"} {
+	for _, mode := range []string{"invalid-proof", lostResponseMode} {
 		t.Run(mode, func(t *testing.T) {
 			store, _ := testConformanceStore(t, conformanceSQLiteSingleBackend)
 			a, p := conformanceApp(t, store)
 			cookie, state := beginCallbackLogin(t, a, p, nil)
 			if mode == "invalid-proof" {
-				p.claims = func(claims map[string]any) { claims["nonce"] = "wrong" }
+				p.claims = func(claims map[string]any) { claims["nonce"] = testCallbackWrongNonce }
 			} else {
 				p.mode = mode
 			}
 			w := httptest.NewRecorder()
 			outcome, err := (&Client{app: a}).CallbackResult(w, callbackRequest(t, a, cookie, state))
 			assertNoCallbackOutcome(t, outcome, err)
-			if mode == "lost" && !errors.Is(err, ErrUnavailable) {
+			if mode == lostResponseMode && !errors.Is(err, ErrUnavailable) {
 				t.Fatal("transport error became a completed login or identity denial", err)
 			}
 			if p.calls.Load() != 1 || w.Code != http.StatusUnauthorized {

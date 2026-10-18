@@ -19,6 +19,7 @@ const (
 	conformanceNonce               = "nonce"
 	conformancePostgresBackend     = "postgres"
 	conformanceSQLiteSingleBackend = "sqlite-one-connection"
+	conformanceSQLitePoolBackend = "sqlite-pool"
 	conformanceState               = "state"
 	pendingSessionStatus           = "pending"
 )
@@ -88,7 +89,7 @@ func testConformanceStore(t *testing.T, backend string) (conformanceStore, func(
 }
 
 func TestStoreConformance(t *testing.T) {
-	for _, backend := range []string{conformancePostgresBackend, conformanceSQLiteSingleBackend, "sqlite-pool"} {
+	for _, backend := range []string{conformancePostgresBackend, conformanceSQLiteSingleBackend, conformanceSQLitePoolBackend} {
 		t.Run(backend, func(t *testing.T) {
 			t.Run("login-restart-one-use", func(t *testing.T) {
 				testConformanceLoginRestart(t, backend)

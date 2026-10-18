@@ -240,31 +240,39 @@ func (a *app) login(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, target, http.StatusSeeOther)
 }
 
-func (a *app) callback(w http.ResponseWriter, r *http.Request) (CallbackOutcome, error) {
+func (a *app) claimCallbackLogin(w http.ResponseWriter, r *http.Request) (login, string, error) {
 	q, e := url.ParseQuery(r.URL.RawQuery)
 	if e != nil || len(q) > 8 || len(q.Get("state")) != 43 {
 		http.Error(w, "Invalid callback", http.StatusBadRequest)
-		return CallbackOutcome{}, ErrDenied
+		return login{}, "", ErrDenied
 	}
 	for k, v := range q {
 		if len(k) > 64 || len(v) != 1 || len(v[0]) > 4096 {
 			http.Error(w, "Invalid callback", http.StatusBadRequest)
-			return CallbackOutcome{}, ErrDenied
+			return login{}, "", ErrDenied
 		}
 	}
 	id, e := browserID(r)
 	if e != nil {
 		http.Error(w, "Sign-in browser binding was lost", http.StatusBadRequest)
-		return CallbackOutcome{}, ErrDenied
+		return login{}, "", ErrDenied
 	}
 	l, e := a.store.claimLogin(r.Context(), digest(q.Get("state")), id)
 	if e != nil {
 		http.Error(w, "Sign-in expired or already used", http.StatusBadRequest)
-		return CallbackOutcome{}, publicError(e)
+		return login{}, "", publicError(e)
 	}
 	if q.Get("error") != "" || q.Get("code") == "" {
 		http.Error(w, "Sign-in was not completed; return to the app", http.StatusUnauthorized)
-		return CallbackOutcome{}, ErrDenied
+		return login{}, "", ErrDenied
+	}
+	return l, id, nil
+}
+
+func (a *app) callback(w http.ResponseWriter, r *http.Request) (CallbackOutcome, error) {
+	l, id, e := a.claimCallbackLogin(w, r)
+	if e != nil {
+		return CallbackOutcome{}, e
 	}
 	verifier, e := unseal(a.aead, l.Verifier, l.binding())
 	if e != nil {

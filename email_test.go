@@ -17,6 +17,7 @@ const (
 	testEmailTrue          = "true"
 	testEmailAliasClaim    = "email_alias"
 	testEmailClaim         = "email"
+	testEmailLoginClaim = "login"
 	testEmailVerifiedClaim = "email_verified"
 	testEmailNonce         = "nonce"
 	testEmailIDToken       = "id_token"
@@ -96,7 +97,7 @@ func TestSignedEmailClaimsAndNoFallback(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			p.claims = func(m map[string]any) {
 				m[testEmailIdentifiers] = map[string]any{
-					"version": 1, "login": "User", testEmailAliasClaim: "alias@example.test",
+					"version": 1, testEmailLoginClaim: "User", testEmailAliasClaim: "alias@example.test",
 				}
 				m["authhub_profile"] = map[string]string{
 					testEmailClaim: "profile@example.test", testEmailVerifiedClaim: testEmailTrue,
@@ -134,7 +135,7 @@ func TestEmailClaimsRequireValidSignatureAndRefreshSnapshot(t *testing.T) {
 	client.config.RequestEmail = true
 	p.claims = func(m map[string]any) {
 		m[testEmailClaim], m[testEmailVerifiedClaim] = testSignedEmail, true
-		m[testEmailIdentifiers] = map[string]any{"version": 1, "login": "Before"}
+		m[testEmailIdentifiers] = map[string]any{"version": 1, testEmailLoginClaim: "Before"}
 	}
 	raw := p.token(testEmailNonce)
 	token := (&oauth2.Token{}).WithExtra(map[string]any{testEmailIDToken: raw})
@@ -155,7 +156,7 @@ func TestEmailClaimsRequireValidSignatureAndRefreshSnapshot(t *testing.T) {
 	}
 	p.claims = func(m map[string]any) {
 		m[testEmailClaim], m[testEmailVerifiedClaim] = "changed@example.test", true
-		m[testEmailIdentifiers] = map[string]any{"version": 1, "login": "After"}
+		m[testEmailIdentifiers] = map[string]any{"version": 1, testEmailLoginClaim: "After"}
 		m["preferred_username"] = "display-only"
 	}
 	token = (&oauth2.Token{}).WithExtra(map[string]any{testEmailIDToken: p.token("")})
@@ -183,7 +184,7 @@ func TestEmailClaimsRequireValidSignatureAndRefreshSnapshot(t *testing.T) {
 }
 
 func TestEmailProofDurableRestartAndRefresh(t *testing.T) {
-	for _, backend := range []string{conformancePostgresBackend, conformanceSQLiteSingleBackend, "sqlite-pool"} {
+	for _, backend := range []string{conformancePostgresBackend, conformanceSQLiteSingleBackend, conformanceSQLitePoolBackend} {
 		t.Run(backend, func(t *testing.T) { testEmailProofPersistence(t, backend) })
 	}
 }
