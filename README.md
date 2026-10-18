@@ -404,3 +404,25 @@ email and display/preferred username can change between issuance snapshots;
 only exact issuer plus subject identifies the external account. None of those
 mutable values, including a true email verification claim, grants a local role,
 membership or automatic identity link.
+
+### Transactional callback integrations
+
+Use `Client.CallbackResult(w, r)` when a host must provision local state only
+after a newly completed callback. It shares the existing ingress, browser/state,
+PKCE/nonce, one-use code exchange, request limits and durable session protocol.
+On success it returns an opaque `CallbackOutcome` after a confirmed installation
+and exact-generation re-read. `Proof()` is immutable and retains the original
+deadline; `ReturnPath()` is the validated path stored by `Begin`, bound to that
+login state. Callback query parameters and an existing cookie cannot mint it.
+
+HTTP ownership is explicit: on error the SDK has already written the failure
+response, so return immediately. On success only security headers are set:
+the host owns the success response and may first commit its local transaction.
+Do not call `Callback` again, exchange the code twice, or infer success from a
+redirect status/Location. Existing `Callback` and `Handler` still return a 303 redirect.
+A local transaction failure does not undo a committed RP callback; deny local
+access and require a new state-bound login for another enrollment attempt.
+The outcome grants no local identity link, role or membership. Validate exact
+issuer/client/project/subject, current native state and any required signed
+email claims; mutable login/email/profile changes never change identity or
+grant authority. Revalidate the original proof via read-only `Check` at commit.
