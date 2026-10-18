@@ -106,6 +106,10 @@ func (t boundedTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 
 // Identity contains independently verified OIDC identity claims.
 type Identity struct {
+	// Email is retained only from a signed ID token when email scope is opted in.
+	// EmailVerified asserts mailbox ownership at issuance, never local authority.
+	Email         string `json:"email,omitempty"`
+	EmailVerified bool   `json:"email_verified,omitempty"`
 	// AuthHubIdentifiers is only populated from the dedicated, signed claim.
 	// Profile and standard email/username claims never supply this authority.
 	AuthHubIdentifiers *CanonicalIdentifiers `json:"authhub_identifiers,omitempty"`
@@ -212,11 +216,15 @@ func newOIDC(
 	if meta.Issuer != c.Issuer {
 		return nil, errors.New("discovery issuer mismatch")
 	}
+	scopes := []string{oidc.ScopeOpenID, "profile"}
+	if c.RequestEmail {
+		scopes = append(scopes, "email")
+	}
 	result := &oidcClient{
 		config: c,
 		oauth: oauth2.Config{
 			ClientID: c.ClientID, ClientSecret: secret, Endpoint: ep, RedirectURL: c.Callback,
-			Scopes: []string{oidc.ScopeOpenID, "profile"},
+			Scopes: scopes,
 		},
 		verifier: provider.Verifier(&oidc.Config{
 			ClientID: c.ClientID, SupportedSigningAlgs: []string{oidc.RS256}, Now: now,
@@ -242,6 +250,8 @@ func (c *oidcClient) verify(ctx context.Context, token *oauth2.Token, nonce stri
 		return fail()
 	}
 	var claims struct {
+		Email            json.RawMessage   `json:"email"`
+		EmailVerified    json.RawMessage   `json:"email_verified"`
 		Identifiers      json.RawMessage   `json:"authhub_identifiers"`
 		ProjectID        string            `json:"project_id"`
 		Purpose          string            `json:"token_use"`
@@ -257,6 +267,10 @@ func (c *oidcClient) verify(ctx context.Context, token *oauth2.Token, nonce stri
 		claims.Purpose != "id" ||
 		!uuidPattern.MatchString(claims.SID) ||
 		claims.AuthTime <= 0 {
+		return fail()
+	}
+	email, emailVerified, valid := signedEmail(c.config.RequestEmail, claims.Email, claims.EmailVerified)
+	if !valid {
 		return fail()
 	}
 	identifiers, valid := parseCanonicalIdentifiers(claims.Identifiers)
@@ -294,6 +308,8 @@ func (c *oidcClient) verify(ctx context.Context, token *oauth2.Token, nonce stri
 		return fail()
 	}
 	return identity{
+		Email:             email,
+		EmailVerified:     emailVerified,
 		AuthHubIdentifiers: identifiers,
 		AuthHubMFA:         verifiedMFAEnrollment(id),
 		Issuer:             id.Issuer,

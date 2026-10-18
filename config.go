@@ -36,6 +36,7 @@ type config struct {
 	Ingress                                        *ingress.Policy
 	HTTPSReverseProxy                              bool
 	ClientBoundProject                             bool
+	RequestEmail                                   bool
 }
 
 const privateHTTPTransport = "private-http"
