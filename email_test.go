@@ -12,12 +12,12 @@ import (
 )
 
 const (
-	testSignedEmail       = "verified@example.test"
-	testEmailClaim        = "email"
+	testSignedEmail        = "verified@example.test"
+	testEmailClaim         = "email"
 	testEmailVerifiedClaim = "email_verified"
-	testEmailNonce        = "nonce"
-	testEmailIDToken      = "id_token"
-	testEmailIdentifiers  = "authhub_identifiers"
+	testEmailNonce         = "nonce"
+	testEmailIDToken       = "id_token"
+	testEmailIdentifiers   = "authhub_identifiers"
 )
 
 func TestEmailScopeIsExplicitAndCompatible(t *testing.T) {
@@ -67,10 +67,14 @@ func TestSignedEmailClaimsAndNoFallback(t *testing.T) {
 		denied   bool
 	}{
 		{name: "missing"},
-		{name: "verified", claims: map[string]any{testEmailClaim: testSignedEmail, testEmailVerifiedClaim: true},
-			email: testSignedEmail, verified: true},
-		{name: "false", claims: map[string]any{testEmailClaim: testSignedEmail, testEmailVerifiedClaim: false},
-			email: testSignedEmail},
+		{
+			name: "verified", claims: map[string]any{testEmailClaim: testSignedEmail, testEmailVerifiedClaim: true},
+			email: testSignedEmail, verified: true,
+		},
+		{
+			name: "false", claims: map[string]any{testEmailClaim: testSignedEmail, testEmailVerifiedClaim: false},
+			email: testSignedEmail,
+		},
 		{name: "missing flag", claims: map[string]any{testEmailClaim: testSignedEmail}, email: testSignedEmail},
 		{name: "false without email", claims: map[string]any{testEmailVerifiedClaim: false}},
 		{name: "true without email", claims: map[string]any{testEmailVerifiedClaim: true}, denied: true},

@@ -308,8 +308,8 @@ func (c *oidcClient) verify(ctx context.Context, token *oauth2.Token, nonce stri
 		return fail()
 	}
 	return identity{
-		Email:             email,
-		EmailVerified:     emailVerified,
+		Email:              email,
+		EmailVerified:      emailVerified,
 		AuthHubIdentifiers: identifiers,
 		AuthHubMFA:         verifiedMFAEnrollment(id),
 		Issuer:             id.Issuer,
