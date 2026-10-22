@@ -185,6 +185,15 @@ func TestMFAAdvisoryDuplicateOuterClaimDoesNotBreakLoginOrRenewal(t *testing.T) 
 	}
 }
 
+func TestMFAAdvisorySingleCaseAliasPreserved(t *testing.T) {
+	p, c := newMFAAuthority(t)
+	token := signedMFAOuterFields(t, p, `"AUTHHUB_MFA":{"version":1,"enrolled":false,"setup_available":true}`)
+	id, err := c.verify(t.Context(), token, "nonce", nil)
+	if err != nil || id.AuthHubMFA == nil || id.AuthHubMFA.Enrolled || !id.AuthHubMFA.SetupAvailable {
+		t.Fatal("single case alias lost advisory compatibility", err)
+	}
+}
+
 // Sign the duplicate-bearing bytes themselves; map encoding cannot represent
 // duplicate outer members. The ordinary verifier still checks this signature.
 func signedMFAOuterFields(t *testing.T, p *authority, fields string) *oauth2.Token {
