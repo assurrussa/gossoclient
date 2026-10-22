@@ -16,7 +16,7 @@ import browser "github.com/assurrussa/gossoclient"
 
 ## Requirements
 
-- Go 1.27.0; the module selects toolchain Go 1.27.1
+- Go 1.27.2 or newer
 - An application-owned PostgreSQL database or isolated schema
 - A registered confidential OIDC client and project
 - Explicit HTTPS issuer, application origin and callback URLs
