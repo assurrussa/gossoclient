@@ -1,10 +1,7 @@
 package browser
 
 import (
-	"bytes"
 	"encoding/json"
-	"io"
-	"strings"
 
 	"github.com/coreos/go-oidc/v3/oidc"
 )
@@ -46,35 +43,7 @@ func verifiedAMR(id *oidc.IDToken) []string {
 	if id.Claims(&raw) != nil {
 		return nil
 	}
-	d := json.NewDecoder(bytes.NewReader(raw))
-	if token, err := d.Token(); err != nil || token != json.Delim('{') {
-		return nil
-	}
-	var found json.RawMessage
-	for d.More() {
-		token, err := d.Token()
-		key, ok := token.(string)
-		if err != nil || !ok {
-			return nil
-		}
-		var value json.RawMessage
-		if d.Decode(&value) != nil {
-			return nil
-		}
-		// Do not allow case-folded or duplicate claim names to bypass exact spelling.
-		if strings.EqualFold(key, "amr") {
-			if key != "amr" || found != nil {
-				return nil
-			}
-			found = value
-		}
-	}
-	if _, err := d.Token(); err != nil {
-		return nil
-	}
-	if _, err := d.Token(); err != io.EOF {
-		return nil
-	}
+	found := uniqueVerifiedClaim(raw, "amr", true)
 	var values []string
 	if json.Unmarshal(found, &values) != nil || len(values) == 0 {
 		return nil
