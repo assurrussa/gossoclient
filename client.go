@@ -18,6 +18,11 @@ import (
 // Expired, terminal and superseded generations require a new admission.
 var ErrDenied = errFenced
 
+// ErrRequiredAMR means the verified proof lacks the required authentication
+// method. It deliberately does not match ErrDenied: a host must show a terminal
+// policy error, not automatically retry login or initiate fresh admission.
+var ErrRequiredAMR = errors.New("required authentication method not satisfied")
+
 // ErrUnavailable means the boundary could not confirm validity. Fail closed;
 // do not mint or extend a host session. A later request may retry validity, but
 // must never independently replay an OAuth exchange or claimed refresh.
@@ -26,6 +31,9 @@ var ErrUnavailable = errors.New("session validity unavailable")
 func publicError(e error) error {
 	if e == nil {
 		return nil
+	}
+	if errors.Is(e, ErrRequiredAMR) {
+		return ErrRequiredAMR
 	}
 	if errors.Is(e, errFenced) || errors.Is(e, sql.ErrNoRows) {
 		return ErrDenied
@@ -178,6 +186,7 @@ type Proof struct {
 // Identity returns a copy of verified claims. Metadata is display-only, never ACL.
 func (p Proof) Identity() Identity {
 	v := p.identity
+	v.AMR = append([]string(nil), v.AMR...)
 	v.Profile = cloneMetadata(v.Profile)
 	v.Project = cloneMetadata(v.Project)
 	v.AuthHubIdentifiers = cloneCanonicalIdentifiers(v.AuthHubIdentifiers)
@@ -207,7 +216,8 @@ func (p Proof) Deadline() time.Time { return p.deadline }
 
 func (a *app) proof(v session) *Proof {
 	if v.Status != sessionActive || v.Proof == nil || v.LoginGeneration <= 0 ||
-		v.Proof.SessionExpiresAt.IsZero() || !a.now().Before(minTime(v.FreshUntil, effectiveAbsolute(v))) {
+		!satisfiesAMR(v.Proof.AMR, a.config.RequiredAMR) || v.Proof.SessionExpiresAt.IsZero() ||
+		!a.now().Before(minTime(v.FreshUntil, effectiveAbsolute(v))) {
 		return nil
 	}
 	p := &Proof{
@@ -216,6 +226,7 @@ func (a *app) proof(v session) *Proof {
 	}
 	p.identity.AbsoluteUntil = effectiveAbsolute(v)
 	p.identity.FreshUntil = p.deadline
+	p.identity.AMR = append([]string(nil), p.identity.AMR...)
 	p.identity.Profile = cloneMetadata(p.identity.Profile)
 	p.identity.Project = cloneMetadata(p.identity.Project)
 	p.identity.AuthHubIdentifiers = cloneCanonicalIdentifiers(p.identity.AuthHubIdentifiers)
@@ -359,6 +370,9 @@ func (c *Client) Check(ctx context.Context, b Binding) (Proof, error) {
 		!a.config.allowsProject(v.Proof.ProjectID) || v.Proof.SessionExpiresAt.IsZero() ||
 		b.Deadline.After(minTime(v.FreshUntil, effectiveAbsolute(v))) {
 		return Proof{}, ErrDenied
+	}
+	if !satisfiesAMR(v.Proof.AMR, a.config.RequiredAMR) {
+		return Proof{}, ErrRequiredAMR
 	}
 	if !matchesBinding(v, b) {
 		return Proof{}, ErrDenied

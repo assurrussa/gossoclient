@@ -104,6 +104,20 @@ func WithEmailScope() Option {
 	return option("email scope", func(o *options) { o.config.RequestEmail = true })
 }
 
+// WithRequiredAMR requires the exact case-sensitive authentication method in
+// every verified ID token and durable proof. Missing or malformed AMR fails
+// closed. It does not request step-up, start sign-in, or infer strength from
+// enrollment hints. Omit this option to accept providers without AMR.
+func WithRequiredAMR(value string) Option {
+	return option("required AMR", func(o *options) {
+		if !validAMRValue(value) {
+			o.err = errors.New("required AMR must be a nonempty printable ASCII method without spaces")
+			return
+		}
+		o.config.RequiredAMR = value
+	})
+}
+
 // WithIssuerCAFile selects bounded public PEM trust roots read at construction.
 func WithIssuerCAFile(value string) Option {
 	return option("issuer CA file", func(o *options) { o.config.IssuerCAFile = value })

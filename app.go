@@ -8,6 +8,7 @@ import (
 	"errors"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 	"time"
 
@@ -289,6 +290,11 @@ func (a *app) callback(w http.ResponseWriter, r *http.Request) (CallbackOutcome,
 		return CallbackOutcome{}, ErrUnavailable
 	}
 	p, e := a.oidc.verify(r.Context(), token, l.Nonce, nil)
+	if errors.Is(e, ErrRequiredAMR) {
+		a.discard(r.Context(), token.RefreshToken)
+		http.Error(w, "Required authentication method not satisfied", http.StatusUnauthorized)
+		return CallbackOutcome{}, ErrRequiredAMR
+	}
 	if e != nil || token.RefreshToken == "" || len(token.RefreshToken) > 4096 {
 		a.discard(r.Context(), token.RefreshToken)
 		http.Error(w, "Invalid identity proof", http.StatusUnauthorized)
@@ -326,6 +332,7 @@ func (a *app) callback(w http.ResponseWriter, r *http.Request) (CallbackOutcome,
 		proof.identity.Issuer != p.Issuer || proof.identity.ClientID != p.ClientID ||
 		proof.identity.ProjectID != p.ProjectID || proof.identity.Subject != p.Subject ||
 		proof.identity.SessionID != p.SessionID || proof.identity.AuthTime != p.AuthTime ||
+		!slices.Equal(proof.identity.AMR, p.AMR) ||
 		proof.identity.Email != p.Email || proof.identity.EmailVerified != p.EmailVerified ||
 		!proof.identity.IssuedAt.Equal(p.IssuedAt) {
 		http.Error(w, "Sign-in was superseded; return to the app", http.StatusUnauthorized)
@@ -347,6 +354,9 @@ func (a *app) authorize(ctx context.Context, v session) (session, error) {
 	}
 	if v.Proof.Issuer != a.config.Issuer || v.Proof.ClientID != a.config.ClientID || !a.config.allowsProject(v.Proof.ProjectID) {
 		return v, a.terminate(ctx, v)
+	}
+	if !satisfiesAMR(v.Proof.AMR, a.config.RequiredAMR) {
+		return v, a.denyAMR(ctx, v)
 	}
 	if !a.now().Before(effectiveAbsolute(v)) {
 		return v, a.terminate(ctx, v)
@@ -376,6 +386,9 @@ func (a *app) authorize(ctx context.Context, v session) (session, error) {
 		current.Proof.ClientID != a.config.ClientID ||
 		!a.config.allowsProject(current.Proof.ProjectID) {
 		return current, a.terminate(ctx, current)
+	}
+	if !satisfiesAMR(current.Proof.AMR, a.config.RequiredAMR) {
+		return current, a.denyAMR(ctx, current)
 	}
 	if !a.now().Before(effectiveAbsolute(current)) {
 		return current, a.terminate(ctx, current)
@@ -418,6 +431,9 @@ func (a *app) refresh(ctx context.Context, v session) error {
 	if verifyErr != nil || next.RefreshToken == "" || len(next.RefreshToken) > 4096 || next.RefreshToken == old {
 		terminalErr := a.terminate(ctx, v)
 		a.discard(ctx, next.RefreshToken)
+		if errors.Is(verifyErr, ErrRequiredAMR) && errors.Is(terminalErr, errFenced) {
+			return ErrRequiredAMR
+		}
 		return terminalErr
 	}
 	updated := v
@@ -501,4 +517,11 @@ func (a *app) logoutSession(w http.ResponseWriter, r *http.Request, v session) {
 		return
 	}
 	http.Redirect(w, r, location, http.StatusSeeOther)
+}
+
+func (a *app) denyAMR(ctx context.Context, v session) error {
+	if err := a.terminate(ctx, v); !errors.Is(err, errFenced) {
+		return err
+	}
+	return ErrRequiredAMR
 }

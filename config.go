@@ -37,6 +37,7 @@ type config struct {
 	HTTPSReverseProxy                              bool
 	ClientBoundProject                             bool
 	RequestEmail                                   bool
+	RequiredAMR                                    string
 }
 
 const privateHTTPTransport = "private-http"
@@ -132,6 +133,9 @@ func (c config) validateIngress() error {
 }
 
 func (c config) validate() error {
+	if c.RequiredAMR != "" && !validAMRValue(c.RequiredAMR) {
+		return errors.New("required AMR must be a nonempty printable ASCII method without spaces")
+	}
 	if err := c.validateIngress(); err != nil {
 		return err
 	}
