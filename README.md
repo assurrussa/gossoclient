@@ -76,6 +76,44 @@ if err != nil {
 }
 ```
 
+### Require verified authentication methods (opt-in)
+
+Roll out the SDK upgrade with the option omitted first. Enable
+`WithRequiredAMR("mfa")` only after the deployed AuthHub issuer signs trustworthy
+AMR for completed authentication and preserves it correctly across refresh.
+Upgrading this SDK alone remains compatible with an older issuer in opt-out
+mode; enabling the requirement against an issuer that omits AMR denies login
+and recovered sessions. Do not infer rollout readiness from MFA enrollment.
+
+Add `browser.WithRequiredAMR("mfa")` to the options to require the exact,
+case-sensitive `mfa` method in every admitted proof. `Identity.AMR` is an
+independent copy of the methods in the current cryptographically verified ID
+token. `auth_time` retains its existing meaning and refresh pins. Enrollment
+hints (`authhub_mfa`), profile metadata, access tokens and OAuth response fields
+never establish authentication strength.
+
+The requirement applies at callback, browser verification, stored/recovered
+proof admission (`Check`/`Valid`), and refresh. Missing, empty, malformed or
+ambiguous AMR cannot satisfy it. Methods must be nonempty printable ASCII
+strings without spaces; values are not normalized. Duplicate method values are
+valid. Duplicate or case-aliased outer `amr` claim names are ambiguous and
+suppressed. A refresh replaces AMR entirely, never inheriting old methods.
+
+Without the option, missing or malformed signed AMR is treated as absent and
+existing login behavior is preserved. Stored legacy proofs without AMR remain
+usable only when no method is required; malformed stored JSON fails closed.
+No schema migration is needed: verified AMR is part of the existing durable
+proof JSON. Proof getters copy the methods so callers cannot change authority.
+
+On a requirement failure, `errors.Is(err, browser.ErrRequiredAMR)` is true.
+This is intentionally distinct from `ErrDenied` and does not match it: ordinary
+fresh-admission handling must not turn a strength-policy failure into a loop. The callback returns HTTP 401 with
+an explicit error and no redirect. Browser admission/refresh terminates the
+unsatisfied local session; `Check` and `Valid` remain read-only and deny it.
+No proof or host session may be created on denial. This option does not request
+or initiate step-up. Do not automatically redirect failures back into login:
+show a terminal error and offer only an explicit user-controlled next action.
+
 Load secrets from protected application inputs. Do not put them in source, URLs
 or logs.
 
@@ -212,6 +250,7 @@ verified proof.
 
 Use `errors.Is`:
 
+- `ErrRequiredAMR`: terminal authentication-strength policy failure; show an error with manual remediation, never automatically restart sign-in
 - `ErrDenied`: expired, terminal, superseded or mismatched authority; require fresh admission
 - `ErrUnavailable`: validity could not be confirmed; fail closed without creating or extending authorization
 

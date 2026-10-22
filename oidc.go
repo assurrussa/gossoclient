@@ -113,6 +113,9 @@ type Identity struct {
 	// AuthHubIdentifiers is only populated from the dedicated, signed claim.
 	// Profile and standard email/username claims never supply this authority.
 	AuthHubIdentifiers *CanonicalIdentifiers `json:"authhub_identifiers,omitempty"`
+	// AMR contains only methods from the current verified signed ID token.
+	// Enrollment, profile, access-token and prior-token claims never supply it.
+	AMR []string `json:"amr,omitempty"`
 	// AuthHubMFA is an advisory issuance snapshot, never authentication strength.
 	AuthHubMFA    *MFAEnrollment `json:"authhub_mfa,omitempty"`
 	Issuer        string         `json:"issuer"`
@@ -269,6 +272,10 @@ func (c *oidcClient) verify(ctx context.Context, token *oauth2.Token, nonce stri
 		claims.AuthTime <= 0 {
 		return fail()
 	}
+	amr := verifiedAMR(id)
+	if !satisfiesAMR(amr, c.config.RequiredAMR) {
+		return identity{}, ErrRequiredAMR
+	}
 	email, emailVerified, valid := signedEmail(c.config.RequestEmail, claims.Email, claims.EmailVerified)
 	if !valid {
 		return fail()
@@ -277,7 +284,7 @@ func (c *oidcClient) verify(ctx context.Context, token *oauth2.Token, nonce stri
 	if !valid {
 		return fail()
 	}
-	if nonce != "" && id.Nonce != nonce {
+	if !matchesIdentityNonce(id, nonce) {
 		return fail()
 	}
 	now := c.now()
@@ -308,6 +315,7 @@ func (c *oidcClient) verify(ctx context.Context, token *oauth2.Token, nonce stri
 		return fail()
 	}
 	return identity{
+		AMR:                amr,
 		Email:              email,
 		EmailVerified:      emailVerified,
 		AuthHubIdentifiers: identifiers,
@@ -325,6 +333,10 @@ func (c *oidcClient) verify(ctx context.Context, token *oauth2.Token, nonce stri
 		Profile:            claims.Profile,
 		Project:            claims.Project,
 	}, nil
+}
+
+func matchesIdentityNonce(id *oidc.IDToken, nonce string) bool {
+	return nonce == "" || id.Nonce == nonce
 }
 
 func validIdentityTimes(id *oidc.IDToken, authTime int64, sessionExpiresAt, now time.Time) bool {
