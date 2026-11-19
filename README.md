@@ -193,8 +193,10 @@ client is in use.
 
 The separate `Begin`, `Callback` and `Logout` methods enforce those same
 paths and methods. POST forms must include `View.CSRF` and meet the same-origin
-checks. Callback success installs durable state and redirects to `/`; it does
-not create a local user.
+checks. `Callback` success installs durable state and redirects with HTTP 303
+to the validated return path saved at login (default `/`); it does not create a
+local user. For host-owned success delivery, use
+[`CallbackResult`](#transactional-callback-integrations) instead.
 
 Render `View.CentralLogout` only when nonempty.
 
@@ -445,6 +447,26 @@ mutable values, including a true email verification claim, grants a local role,
 membership or automatic identity link.
 
 ### Transactional callback integrations
+
+The SDK entry point is a Go method, not a JSON API. Its exact declaration is:
+
+```go
+func (c *Client) CallbackResult(w http.ResponseWriter, r *http.Request) (CallbackOutcome, error)
+```
+
+This is a signature reference, not a standalone runnable program. `w` and `r`
+are Go handler arguments, **not HTTP request-body fields**. See the source
+contract in [`callback.go`](callback.go) and the behavioral tests in
+[`callback_test.go`](callback_test.go).
+
+| Entry point | Successful HTTP response |
+| --- | --- |
+| `Callback`, or `Handler` serving `GET /callback` | SDK sends HTTP 303 to the saved, validated return path. |
+| `CallbackResult` | SDK sets security headers only. It writes no success status (including 200), body, cookie or redirect. The host must deliver the response. |
+
+`CallbackOutcome` is a Go return value, not a JSON response body. On error,
+`CallbackResult` has already written the failure response; return immediately
+without writing another response. Do not assume every failure is HTTP 400.
 
 Use `Client.CallbackResult(w, r)` when a host must provision local state only
 after a newly completed callback. It shares the existing ingress, browser/state,
